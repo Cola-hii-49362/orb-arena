@@ -1,0 +1,2410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>ORB ARENA — Ball Battle</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='12' fill='%234de1ff'/%3E%3Ccircle cx='11' cy='11' r='4' fill='%23fff' opacity='.6'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#06080f;
+    --text:#e9eefb;
+    --dim:#8b9cc0;
+    --line:rgba(130,170,255,.16);
+    --panel:rgba(12,17,29,.92);
+    --gold:#ffc94d;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;}
+  #cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  /* ---------- HUD ---------- */
+  #hud{position:absolute;inset:0;pointer-events:none;z-index:5}
+  .hud-tl{position:absolute;top:12px;left:14px;display:flex;gap:8px;align-items:flex-start}
+  .hud-tr{position:absolute;top:12px;right:14px;display:flex;gap:8px;align-items:center;pointer-events:auto}
+  .chip{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:6px 11px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+    backdrop-filter:blur(8px);line-height:1.45;
+  }
+  .chip b{display:block;font-size:16px;letter-spacing:.02em;color:var(--text);font-weight:700}
+  .chip.warn b{color:#ff6b81}
+  .chip.gold b{color:var(--gold)}
+  .iconbtn{
+    pointer-events:auto;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);font-size:14px;cursor:pointer;display:grid;place-items:center;
+    transition:.15s;backdrop-filter:blur(8px);
+  }
+  .iconbtn:hover{color:var(--text);border-color:rgba(130,170,255,.4)}
+
+  /* ---------- bottom player bar ---------- */
+  #pbar{
+    position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+    display:flex;align-items:center;gap:13px;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:9px 15px;backdrop-filter:blur(10px);max-width:calc(100% - 24px);
+  }
+  #porb{width:36px;height:36px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 18px currentColor}
+  #pmeta{flex:1;min-width:120px}
+  #pname{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:4px;white-space:nowrap}
+  #pname span{color:var(--text);font-weight:700}
+  #hpwrap{height:9px;border-radius:5px;background:rgba(255,255,255,.08);overflow:hidden}
+  #hpfill{height:100%;width:100%;border-radius:5px;background:#3ddc84;transition:width .12s linear, background .2s}
+  #modrow{display:flex;gap:4px;flex:0 0 auto}
+  .modchip{
+    width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;
+    border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--c);
+  }
+  #abwrap{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+  #abicon{
+    position:relative;width:58px;height:46px;border-radius:11px;border:1px solid var(--line);
+    background:rgba(255,255,255,.04);display:grid;place-items:center;overflow:hidden;text-align:center;
+  }
+  #abfill{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.14);height:0%}
+  #ablabel{position:relative;z-index:2;font-size:9.5px;font-weight:800;letter-spacing:.04em;line-height:1.05}
+  #abkey{position:relative;z-index:2;font-size:8px;color:var(--dim);margin-top:1px;letter-spacing:.02em;white-space:nowrap}
+
+  /* ---------- screens ---------- */
+  .screen{
+    position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 40%, rgba(20,30,55,.88), rgba(4,6,12,.975) 70%);
+    backdrop-filter:blur(4px);padding:20px;overflow:auto;
+  }
+  .screen.hidden{display:none}
+  .card{width:min(940px,100%);}
+  h1{
+    margin:0 0 3px;font-size:clamp(30px,5.4vw,54px);letter-spacing:.16em;font-weight:800;
+    background:linear-gradient(92deg,#4de1ff,#c084fc 45%,#ff5470);-webkit-background-clip:text;background-clip:text;color:transparent;
+    text-align:center;
+  }
+  h2{margin:0;font-size:20px;letter-spacing:.16em;font-weight:800}
+  .sub{text-align:center;color:var(--dim);font-size:12px;letter-spacing:.22em;text-transform:uppercase;margin-bottom:20px}
+
+  .menubar{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+  .coinpill{
+    display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid rgba(255,201,77,.3);
+    border-radius:10px;padding:7px 14px;font-size:15px;font-weight:800;color:var(--gold);
+    font-family:ui-monospace,Menlo,monospace;
+  }
+  .statpill{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 13px;
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);text-align:center;
+  }
+  .statpill b{display:block;font-size:15px;color:var(--text);font-family:ui-monospace,Menlo,monospace;letter-spacing:0}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:18px}
+  .opt{
+    position:relative;text-align:left;cursor:pointer;border-radius:14px;padding:13px;
+    background:rgba(255,255,255,.032);border:1px solid var(--line);transition:.16s;
+  }
+  .opt:hover{background:rgba(255,255,255,.07);transform:translateY(-2px)}
+  .opt.sel{border-color:var(--c);background:color-mix(in srgb, var(--c) 13%, transparent);box-shadow:0 0 0 1px var(--c) inset, 0 8px 30px -12px var(--c)}
+  .opt .dot{width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 32% 30%, var(--c2), var(--c));box-shadow:0 0 16px var(--c);margin-bottom:8px}
+  .opt .nm{font-size:13.5px;font-weight:800;letter-spacing:.1em}
+  .opt .tg{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--c);margin:2px 0 6px;font-weight:700}
+  .opt .ds{font-size:11px;line-height:1.5;color:var(--dim)}
+  .opt .st{display:flex;gap:6px;margin-top:8px;font-size:9px;color:var(--dim);letter-spacing:.05em;flex-wrap:wrap}
+  .opt .st i{font-style:normal;background:rgba(255,255,255,.06);padding:2px 6px;border-radius:5px}
+
+  .cta{
+    display:block;margin:0 auto;padding:13px 46px;border-radius:12px;border:0;cursor:pointer;
+    font-size:13.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#04060c;
+    background:linear-gradient(92deg,#4de1ff,#a78bfa);box-shadow:0 10px 40px -12px #4de1ff;transition:.16s;
+  }
+  .cta:hover{transform:translateY(-2px);box-shadow:0 16px 46px -12px #4de1ff}
+  .cta.ghost{background:transparent;color:var(--text);border:1px solid var(--line);box-shadow:none}
+  .cta.ghost:hover{background:rgba(255,255,255,.07)}
+  .cta.sm{padding:10px 26px;font-size:12px}
+  .row{display:flex;gap:11px;justify-content:center;flex-wrap:wrap}
+  .keys{margin-top:16px;text-align:center;font-size:10.5px;color:var(--dim);letter-spacing:.05em;line-height:2}
+  .keysnote{
+    margin-top:9px;font-size:10px;line-height:1.5;letter-spacing:.03em;
+    color:var(--dim);opacity:.8;max-width:430px;margin-left:auto;margin-right:auto;
+  }
+  kbd{
+    background:rgba(255,255,255,.08);border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:5px;padding:1.5px 6px;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text);margin:0 2px;
+  }
+  .big{font-size:clamp(26px,4.6vw,42px);font-weight:800;letter-spacing:.14em;text-align:center;margin-bottom:6px}
+  .stats{display:flex;gap:24px;justify-content:center;margin:20px 0 24px;flex-wrap:wrap}
+  .stat{text-align:center}
+  .stat b{display:block;font-size:24px;font-weight:800;font-family:ui-monospace,Menlo,monospace}
+  .stat span{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+
+  /* ---------- loadout ---------- */
+  .lohead{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+  .lohead p{margin:5px 0 0;font-size:11.5px;color:var(--dim);line-height:1.5}
+  .slotrow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+  .slot{
+    border-radius:13px;border:1px dashed var(--line);padding:12px;text-align:center;min-height:76px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    background:rgba(255,255,255,.02);transition:.16s;
+  }
+  .slot.filled{border-style:solid;border-color:var(--c);background:color-mix(in srgb,var(--c) 11%,transparent);cursor:pointer}
+  .slot.filled:hover{background:color-mix(in srgb,var(--c) 20%,transparent)}
+  .slot .ic{font-size:19px;color:var(--c)}
+  .slot .nm{font-size:9.5px;letter-spacing:.1em;font-weight:700;color:var(--dim)}
+  .slot.filled .nm{color:var(--text)}
+  .modgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:9px}
+  .mod{
+    border-radius:12px;border:1px solid var(--line);padding:11px;background:rgba(255,255,255,.028);
+    display:flex;flex-direction:column;gap:7px;transition:.16s;
+  }
+  .mod.owned{border-color:color-mix(in srgb,var(--c) 45%,transparent)}
+  .mod.eq{background:color-mix(in srgb,var(--c) 12%,transparent);border-color:var(--c)}
+  .mod .mh{display:flex;align-items:center;gap:7px}
+  .mod .mh .ic{font-size:15px;color:var(--c)}
+  .mod .mh .nm{font-size:11.5px;font-weight:800;letter-spacing:.09em}
+  .mod .md{font-size:10.5px;line-height:1.45;color:var(--dim);flex:1}
+  .mbtn{
+    border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);
+    font-size:9.5px;font-weight:800;letter-spacing:.11em;padding:7px 8px;cursor:pointer;transition:.15s;
+    font-family:inherit;text-transform:uppercase;
+  }
+  .mbtn:hover:not(:disabled){background:rgba(255,255,255,.14)}
+  .mbtn:disabled{opacity:.35;cursor:not-allowed}
+  .mbtn.buy{background:linear-gradient(92deg,rgba(255,201,77,.22),rgba(255,201,77,.1));border-color:rgba(255,201,77,.45);color:var(--gold)}
+  .mbtn.eqb{background:color-mix(in srgb,var(--c) 22%,transparent);border-color:var(--c);color:var(--text)}
+
+  #toast{
+    position:absolute;top:34%;left:50%;transform:translate(-50%,-50%);z-index:40;pointer-events:none;
+    font-size:clamp(22px,4vw,40px);font-weight:800;letter-spacing:.2em;opacity:0;transition:opacity .3s;
+    text-shadow:0 0 40px currentColor;text-align:center;
+  }
+  @media (max-width:640px){
+    #pbar{padding:7px 9px;gap:8px}
+    .grid{grid-template-columns:1fr 1fr}
+    .opt .ds{display:none}
+    .chip{padding:4px 7px;font-size:9.5px}
+    .chip b{font-size:13px}
+    .slotrow{grid-template-columns:repeat(3,1fr)}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+
+<!-- ================= HUD ================= -->
+<div id="hud" class="hidden">
+  <div class="hud-tl">
+    <div class="chip">Round <b id="hRound">1</b></div>
+    <div class="chip">Enemies <b id="hEnemies">0</b></div>
+    <div class="chip">Score <b id="hScore">0</b></div>
+  </div>
+  <div class="hud-tr">
+    <div class="chip gold">Coins <b id="hCoins">0</b></div>
+    <div class="chip">Orbs <b id="hBalls">1<span style="font-size:11px;color:var(--dim)">/30</span></b></div>
+    <button class="iconbtn" id="btnMute" title="Mute (M)">&#9834;</button>
+    <button class="iconbtn" id="btnPause" title="Pause (P)">&#10074;&#10074;</button>
+  </div>
+
+  <div id="pbar">
+    <div id="porb"></div>
+    <div id="pmeta">
+      <div id="pname"><span id="pnameTxt">BRUISER</span> &middot; <span id="phpTxt" class="mono">240 / 240</span></div>
+      <div id="hpwrap"><div id="hpfill"></div></div>
+    </div>
+    <div id="modrow"></div>
+    <div id="abwrap">
+      <div id="abicon">
+        <div id="abfill"></div>
+        <div>
+          <div id="ablabel">SLAM</div>
+          <div id="abkey">AUTO</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ================= MENU ================= -->
+<div class="screen" id="menu">
+  <div class="card">
+    <h1>ORB ARENA</h1>
+    <div class="sub">Pick your orb &middot; bounce &middot; brawl</div>
+    <div class="menubar">
+      <div class="coinpill">&#9670; <span id="mCoins">0</span></div>
+      <div class="statpill">Best Round<b id="mBestRound">1</b></div>
+      <div class="statpill">Best Score<b id="mBestScore">0</b></div>
+      <div class="statpill">Total Kills<b id="mKills">0</b></div>
+      <div class="statpill">Runs<b id="mRuns">0</b></div>
+    </div>
+    <div class="grid" id="typeGrid"></div>
+    <div class="row">
+      <button class="cta" id="btnStart">Enter Arena</button>
+      <button class="cta ghost" id="btnLoadout">Loadout</button>
+    </div>
+    <div class="keys">
+      <kbd>Mouse</kbd> aim &nbsp;&middot;&nbsp; <kbd>Click</kbd> / <kbd>Space</kbd> kick &nbsp;&middot;&nbsp;
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> kick that way &nbsp;&middot;&nbsp;
+      <kbd>P</kbd> pause &nbsp;&middot;&nbsp; <kbd>M</kbd> mute
+      <div class="keysnote">Abilities fire on their own — no key for them. Hit a wall and you plant
+      a spike or a laser node right there.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= LOADOUT / INVENTORY ================= -->
+<div class="screen hidden" id="loadoutScreen">
+  <div class="card">
+    <div class="lohead">
+      <div>
+        <h2>LOADOUT</h2>
+        <p>Equip up to <b>3 modules</b>. They apply to every orb you play, every round.</p>
+      </div>
+      <div class="coinpill">&#9670; <span id="loCoins">0</span></div>
+    </div>
+    <div class="slotrow" id="slotRow"></div>
+    <div class="modgrid" id="modGrid"></div>
+    <div class="row" style="margin-top:20px">
+      <button class="cta ghost" id="btnLoadoutBack">Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= ROUND CLEAR ================= -->
+<div class="screen hidden" id="clearScreen">
+  <div class="card">
+    <div class="big" style="color:#4de1ff">ARENA CLEARED</div>
+    <div class="sub" id="clearSub">Round 1 complete</div>
+    <div class="stats">
+      <div class="stat"><b id="csScore">0</b><span>Score</span></div>
+      <div class="stat"><b id="csKills">0</b><span>Kills</span></div>
+      <div class="stat"><b id="csHp">0%</b><span>HP Left</span></div>
+      <div class="stat"><b id="csCoins" style="color:var(--gold)">+0</b><span>Coins</span></div>
+    </div>
+    <div class="row">
+      <button class="cta" id="btnNext">Next Round</button>
+      <button class="cta ghost" id="btnSpend">Spend Coins</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= GAME OVER ================= -->
+<div class="screen hidden" id="overScreen">
+  <div class="card">
+    <div class="big" style="color:#ff5470">ORB DESTROYED</div>
+    <div class="sub" id="overSub">You lasted 1 round</div>
+    <div class="stats">
+      <div class="stat"><b id="ovScore">0</b><span>Final Score</span></div>
+      <div class="stat"><b id="ovRound">1</b><span>Rounds</span></div>
+      <div class="stat"><b id="ovKills">0</b><span>Total Kills</span></div>
+      <div class="stat"><b id="ovCoins" style="color:var(--gold)">+0</b><span>Coins Earned</span></div>
+    </div>
+    <div class="sub" id="overBest" style="letter-spacing:.12em;margin-bottom:20px"></div>
+    <div class="row">
+      <button class="cta" id="btnRetry">Try Again</button>
+      <button class="cta ghost" id="btnOverLoadout">Loadout</button>
+      <button class="cta ghost" id="btnMenu">Change Orb</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PAUSE ================= -->
+<div class="screen hidden" id="pauseScreen">
+  <div class="card">
+    <div class="big" style="color:#a78bfa">PAUSED</div>
+    <div class="sub">Press P to resume</div>
+    <div class="row">
+      <button class="cta" id="btnResume">Resume</button>
+      <button class="cta ghost" id="btnQuit">Quit to Menu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   ORB ARENA — physics ball brawler
+   ===================================================================== */
+
+const WORLD = { w: 820, h: 520 };      // tight box — orbs read big and bounce fast
+const MAX_BALLS = 30;                  // hard cap on simultaneous orbs
+const WALL_REST = 1.0;                 // perfectly elastic: bounces never bleed speed
+const MIN_SPEED = 135;                 // nothing ever stalls, so the box keeps moving
+const KICK_CD = 0.32;                  // seconds between kicks
+
+/* ---- automatic ability triggers -------------------------------------
+   Nobody presses an ability any more. Every archetype fires on its own
+   cue, always gated by its cooldown:
+     on:'wall' -> the bounce itself is the trigger; the effect is anchored
+                  to the piece of wall that was just hit
+     on:'near' -> fires once a fight is genuinely in range
+     on:'far'  -> fires when it is safe to commit, or when badly hurt
+   -------------------------------------------------------------------- */
+const AUTO = {
+  bruiser:    { on:'near', range:245 },   // slam the instant a brawl is in range
+  splitter:   { on:'far',  range:430 },   // divide when safe, or when bleeding
+  laser:      { on:'wall'            },   // every wall touch plants a fence node
+  trapper:    { on:'wall'            },   // every wall touch drives in a spike
+  transmuter: { on:'near', range:170 },   // transform just before contact
+  phantom:    { on:'near', range:390 },   // dash in from range
+};
+const FENCE_LIFE = 12;                 // seconds a laser fence node survives
+const FENCE_MAX  = 7;                  // nodes per owner (7 -> 3 fences + 1 spare)
+const FENCE_DMG  = 28;                 // damage per fence tick (112 dps while you are on it)
+const FENCE_TICK = 0.25;               // seconds between fence ticks
+const WALL_FIRE  = 95;                 // a bounce slower than this is a graze, not a trigger
+const MAX_SPIKES = 7;                  // wall spikes one trapper can keep planted
+
+/* Enemies share the archetype table with you, so without these the two sides
+   are perfectly symmetric and every balance change cuts both ways. Scaling the
+   enemy side separately is what lets an archetype be buffed for the player
+   without simultaneously arming the things trying to kill them. */
+const ENEMY_HP  = 0.82;                // enemies are a little softer than you
+const ENEMY_DMG = 0.88;                // and hit a little softer
+
+/* ---------------------- orb archetypes ---------------------- */
+const TYPES = {
+  bruiser: {
+    key:'bruiser', name:'BRUISER', tag:'Heavy Hitter',
+    c:'#ff5470', c2:'#ffb3c1',
+    r:30, mass:5.0, hp:290, kick:300, maxSpeed:520,
+    contact:19, ability:'SLAM', cd:6.2,
+    desc:'Huge and heavy — the slowest orb to kick, but its body alone is a weapon. SLAM fires itself the instant an enemy drifts into range, blasting everything nearby.',
+    stats:['MASS 5.0','DMG 19','KICK 300']
+  },
+  splitter: {
+    key:'splitter', name:'SPLITTER', tag:'Multiply',
+    c:'#4ade80', c2:'#bbf7d0',
+    r:25, mass:2.4, hp:180, kick:350, maxSpeed:560,
+    contact:9, ability:'DIVIDE', cd:5.5,
+    desc:'Divides into smaller copies on its own — when the coast is clear or when you are badly hurt — and again when one dies. Hard capped at 30 orbs in the box.',
+    stats:['MASS 2.4','DMG 9','KICK 350']
+  },
+  laser: {
+    key:'laser', name:'LASER', tag:'Ranged',
+    c:'#22d3ee', c2:'#a5f3fc',
+    r:22, mass:1.7, hp:200, kick:360, maxSpeed:580,
+    contact:12, ability:'FENCE', cd:2.2,
+    desc:'Every wall you hit drives a laser node into that wall. Two nodes link into a live fence — 112 damage a second to anything hostile that crosses it. String them across the box and let the arena do the killing.',
+    stats:['MASS 1.7','FENCE 112/s','KICK 360']
+  },
+  trapper: {
+    key:'trapper', name:'TRAPPER', tag:'Area Denial',
+    c:'#c084fc', c2:'#e9d5ff',
+    r:23, mass:2.1, hp:215, kick:350, maxSpeed:560,
+    contact:11, ability:'SPIKE', cd:2.2,
+    desc:'Every wall you hit drives a spike into it. Anything that comes near detonates it for 70. Bounce around the rim and the whole edge of the arena becomes a minefield.',
+    stats:['MASS 2.1','BLAST 70','KICK 350']
+  },
+  transmuter: {
+    key:'transmuter', name:'TRANSMUTER', tag:'Shape Shifter',
+    c:'#fb923c', c2:'#fed7aa',
+    r:25, mass:2.3, hp:185, kick:350, maxSpeed:560,
+    contact:10, ability:'TRANSFORM', cd:7.5,
+    desc:'Transforms the moment a fight is about to start: 2.5× contact damage, +30% speed, +18% size and 30% damage resistance for 6 seconds.',
+    stats:['MASS 2.3','x2.5 DMG','KICK 350']
+  },
+  phantom: {
+    key:'phantom', name:'PHANTOM', tag:'Assassin',
+    c:'#fde047', c2:'#fef9c3',
+    r:20, mass:1.4, hp:185, kick:420, maxSpeed:660,
+    contact:11, ability:'PHASE DASH', cd:3.4,
+    desc:'The lightest orb — it takes a kick harder and flies further than anything else. PHASE DASH fires itself at range, blinking across the arena to hit brutally.',
+    stats:['MASS 1.4','DMG 11','KICK 420']
+  }
+};
+const TYPE_KEYS = Object.keys(TYPES);
+
+/* ---------------------- modules (inventory items) ---------------------- */
+const MODULES = {
+  vitality:  { name:'VITALITY',  icon:'\u2665', price:70,  color:'#ff5470', desc:'+22% maximum HP on every orb you play.' },
+  thrusters: { name:'KICK POWER', icon:'\u00BB', price:70,  color:'#4de1ff', desc:'+18% kick power and top speed.' },
+  boots:     { name:'QUICK BOOTS',icon:'\u21BB', price:90,  color:'#38bdf8', desc:'-28% kick cooldown, so you can re-kick far sooner.' },
+  spikes:    { name:'SPIKES',    icon:'\u2733', price:90,  color:'#fb923c', desc:'+30% contact damage on every collision.' },
+  overclock: { name:'OVERCLOCK', icon:'\u26A1', price:90,  color:'#c084fc', desc:'-22% ability cooldown.' },
+  regen:     { name:'REGEN',     icon:'\u271A', price:110, color:'#4ade80', desc:'Regenerate 2 HP per second, all round.' },
+  plating:   { name:'PLATING',   icon:'\u25A3', price:110, color:'#94a3b8', desc:'Take 18% less damage from everything.' },
+  vampire:   { name:'VAMPIRE',   icon:'\u2666', price:140, color:'#f472b6', desc:'Heal for 15% of all damage you deal.' },
+  aegis:     { name:'AEGIS',     icon:'\u25C8', price:140, color:'#22d3ee', desc:'Start each round with a shield that blocks one hit.' },
+  warcore:   { name:'WAR CORE',  icon:'\u2739', price:180, color:'#fde047', desc:'+45% damage from your ability.' },
+  swarm:     { name:'SWARM',     icon:'\u2042', price:180, color:'#a3e635', desc:'Start each round with 2 free splitter minions.' }
+};
+const MODULE_KEYS = Object.keys(MODULES);
+const SLOTS = 3;
+
+/* ---------------------- persistence ---------------------- */
+const SAVE_KEY = 'orb-arena-save-v1';
+let storageOK = true;
+try { localStorage.setItem('__oa','1'); localStorage.removeItem('__oa'); } catch(e){ storageOK = false; }
+
+function defaultSave(){
+  return {
+    v:1, coins:0, runs:0, totalKills:0,
+    bestRound:0, bestScore:0,
+    owned:[], equipped:[],
+    orb:'bruiser', muted:false
+  };
+}
+let save = defaultSave();
+function loadSave(){
+  if (!storageOK) return;
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== 'object') return;
+    const d = defaultSave();
+    save = Object.assign(d, p);
+    // sanitise
+    if (!Array.isArray(save.owned)) save.owned = [];
+    if (!Array.isArray(save.equipped)) save.equipped = [];
+    save.owned = save.owned.filter(k => MODULES[k]);
+    save.equipped = save.equipped.filter(k => MODULES[k]).slice(0, SLOTS);
+    if (!TYPES[save.orb]) save.orb = 'bruiser';
+    save.coins = Math.max(0, Math.floor(save.coins) || 0);
+  }catch(e){ save = defaultSave(); }
+}
+function persist(){
+  if (!storageOK) return;
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }catch(e){}
+}
+
+/* ---------------------- canvas / view ---------------------- */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const view = { scale:1, ox:0, oy:0, dpr:1, w:0, h:0 };
+
+/* The arena is a centred box that reserves room for the HUD bars.
+   All padding is proportional to the window, so the box rescales fluidly
+   and can never overflow — no matter how the window is resized. */
+const MAX_SCALE = 1.55;
+const MIN_SCALE = 0.06;
+
+function resize(){
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(1, window.innerWidth  || 1);
+  const h = Math.max(1, window.innerHeight || 1);
+
+  cv.width  = Math.floor(w*dpr);
+  cv.height = Math.floor(h*dpr);
+  cv.style.width  = w+'px';
+  cv.style.height = h+'px';
+  view.dpr = dpr; view.w = w; view.h = h;
+
+  // proportional gutters, clamped so they stay sensible at both extremes
+  const topPad  = Math.min(78, Math.max(30, h*0.082));
+  const botPad  = Math.min(104, Math.max(42, h*0.112));
+  const sidePad = Math.min(30, Math.max(6,  w*0.018));
+  view.topPad = topPad;
+
+  const availW = Math.max(48, w - sidePad*2);
+  const availH = Math.max(48, h - topPad - botPad);
+
+  // fit the whole box on screen, then never blow it up past MAX_SCALE
+  let s = Math.min(availW / WORLD.w, availH / WORLD.h);
+  s = Math.min(s, MAX_SCALE);
+  s = Math.max(s, MIN_SCALE);
+
+  view.scale = s;
+  view.ox = (w - WORLD.w*s)/2;                 // centred horizontally
+  view.oy = topPad + (availH - WORLD.h*s)/2;   // centred in the HUD-free band
+
+  // keep the aim cursor inside the new box
+  mouse.x = Math.min(WORLD.w, Math.max(0, mouse.x));
+  mouse.y = Math.min(WORLD.h, Math.max(0, mouse.y));
+}
+
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+/* ---------------------- tiny helpers ---------------------- */
+const rnd = (a,b)=> a + Math.random()*(b-a);
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+const TAU = Math.PI*2;
+function lerpAngle(a,b,t){
+  const d = ((b-a+Math.PI)%TAU + TAU)%TAU - Math.PI;
+  return a + d*t;
+}
+function hpColor(p){
+  if (p > 0.55) return '#3ddc84';
+  if (p > 0.28) return '#ffc94d';
+  return '#ff5470';
+}
+
+/* =====================================================================
+   AUDIO ENGINE
+   Every sound is synthesised at runtime — no audio files.
+   Three things keep a 30-orb brawl from turning into a wall of noise:
+     1. a compressor on the master bus so overlapping hits can't clip
+     2. a per-sound cooldown, so 12 collisions in one frame play once
+     3. a global voice budget, so the mix never exceeds ~20 simultaneous voices
+   Sounds are also stereo-panned by their position in the arena.
+   ===================================================================== */
+let actx = null, muted = false;
+let masterGain = null, compNode = null;
+let audioReady = false;
+let voiceCount = 0;
+const lastPlayAt = Object.create(null);
+const VOICE_CAP = 28;      // hard ceiling on simultaneous voices, enforced per node
+
+function initAudio(){
+  if (!actx){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      actx = new AC();
+
+      compNode = actx.createDynamicsCompressor();
+      compNode.threshold.value = -16;
+      compNode.knee.value = 24;
+      compNode.ratio.value = 12;
+      compNode.attack.value = 0.003;
+      compNode.release.value = 0.2;
+
+      masterGain = actx.createGain();
+      masterGain.gain.value = 0.9;
+
+      masterGain.connect(compNode);
+      compNode.connect(actx.destination);
+      audioReady = true;
+    }catch(e){ actx = null; audioReady = false; }
+  }
+  // browsers suspend the context until a user gesture
+  if (actx && actx.state === 'suspended') actx.resume();
+}
+
+/* stereo position of a world x, so off-centre hits pan across the arena */
+function panOf(x){
+  return clamp(((x == null ? WORLD.w/2 : x) / WORLD.w) * 2 - 1, -1, 1) * 0.7;
+}
+
+function canPlay(key, minGap, maxVoices){
+  if (muted || !audioReady) return false;
+  const t = actx.currentTime;
+  const last = lastPlayAt[key];
+  if (last !== undefined && t - last < minGap) return false;
+  if (voiceCount >= (maxVoices || 20)) return false;
+  lastPlayAt[key] = t;
+  return true;
+}
+
+function routeOut(node, pan){
+  if (pan && actx.createStereoPanner){
+    const p = actx.createStereoPanner();
+    p.pan.value = clamp(pan, -1, 1);
+    node.connect(p); p.connect(masterGain);
+  } else {
+    node.connect(masterGain);
+  }
+}
+
+/* one synthesised tone with an attack/decay envelope */
+function playTone(o){
+  if (muted || !audioReady || voiceCount >= VOICE_CAP) return;
+  try{
+    const t0  = actx.currentTime + (o.delay || 0);
+    const dur = Math.max(0.02, o.dur);
+    const osc = actx.createOscillator();
+    osc.type = o.type || 'sine';
+    osc.frequency.setValueAtTime(Math.max(20, o.f0), t0);
+    if (o.f1 && o.f1 !== o.f0){
+      if (o.linear) osc.frequency.linearRampToValueAtTime(Math.max(20, o.f1), t0 + dur);
+      else osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.f1), t0 + dur);
+    }
+    const g = actx.createGain();
+    const peak = Math.max(0.0002, o.gain == null ? 0.05 : o.gain);
+    const atk  = Math.max(0.001, o.attack == null ? 0.006 : o.attack);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + Math.min(atk, dur*0.5));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g);
+    routeOut(g, o.pan);
+    voiceCount++;
+    osc.onended = ()=>{ voiceCount = Math.max(0, voiceCount - 1); };
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.03);
+  }catch(e){}
+}
+
+/* filtered noise burst — impacts, explosions, whooshes */
+function playNoise(o){
+  if (muted || !audioReady || voiceCount >= VOICE_CAP) return;
+  try{
+    const t0  = actx.currentTime + (o.delay || 0);
+    const dur = Math.max(0.02, o.dur);
+    const n   = Math.max(2, Math.floor(actx.sampleRate * dur));
+    const buf = actx.createBuffer(1, n, actx.sampleRate);
+    const d   = buf.getChannelData(0);
+    const shape = o.shape || 'decay';
+    const pw = o.power == null ? 2.2 : o.power;
+    for (let i=0;i<n;i++){
+      const x = i/n;
+      let env;
+      if (shape === 'flat')       env = 1;
+      else if (shape === 'swell') env = Math.sin(Math.PI * x);
+      else                        env = Math.pow(1 - x, pw);
+      d[i] = (Math.random()*2 - 1) * env;
+    }
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const flt = actx.createBiquadFilter();
+    flt.type = o.type || 'lowpass';
+    flt.frequency.setValueAtTime(Math.max(40, o.f0 || 2000), t0);
+    if (o.f1) flt.frequency.exponentialRampToValueAtTime(Math.max(40, o.f1), t0 + dur);
+    if (o.q != null) flt.Q.value = o.q;
+    const g = actx.createGain();
+    const peak = Math.max(0.0002, o.gain == null ? 0.1 : o.gain);
+    const atk  = Math.max(0.001, o.attack == null ? 0.004 : o.attack);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + Math.min(atk, dur*0.5));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(flt); flt.connect(g);
+    routeOut(g, o.pan);
+    voiceCount++;
+    src.onended = ()=>{ voiceCount = Math.max(0, voiceCount - 1); };
+    src.start(t0);
+  }catch(e){}
+}
+
+/* ===================== the sound library ===================== */
+const SFX = {
+
+  /* ---------- physical contact (scaled by impact energy) ---------- */
+  tap(x, e){                       // the gentlest touch
+    if (!canPlay('tap', 0.030, 14)) return;
+    const f = 380 + e*560 + rnd(-30,30);
+    playTone({ f0:f, f1:f*0.62, dur:0.05 + e*0.03, type:'triangle', gain:0.008 + e*0.022, pan:panOf(x) });
+  },
+  knock(x, e){                     // a solid collision
+    if (!canPlay('knock', 0.032, 16)) return;
+    const f = 200 + e*170, p = panOf(x);
+    playTone({ f0:f*1.7, f1:f*0.5, dur:0.09 + e*0.08, type:'square', gain:0.016 + e*0.04, pan:p });
+    playNoise({ dur:0.05 + e*0.05, gain:0.015 + e*0.04, f0:2800, f1:600, q:1.2, pan:p });
+  },
+  thud(x, e){                      // heavy impact
+    if (!canPlay('thud', 0.045, 18)) return;
+    const p = panOf(x);
+    playTone({ f0:130 + e*70, f1:32, dur:0.24, type:'sine', gain:0.07 + e*0.06, pan:p, attack:0.003 });
+    playNoise({ dur:0.14, gain:0.045 + e*0.03, f0:1500, f1:170, q:0.9, pan:p });
+  },
+  bounce(x, wall, e){              // wall rebound — each wall has its own pitch
+    if (!canPlay('bounce', 0.028, 14)) return;
+    const base = [300, 344, 268, 372][wall] || 300;
+    const p = panOf(x);
+    playTone({ f0:base*(0.85 + e*0.6), f1:base*0.5, dur:0.06 + e*0.05, type:'sine', gain:0.012 + e*0.03, pan:p });
+    playNoise({ dur:0.04, gain:0.008 + e*0.022, f0:3400, f1:1100, q:1.5, pan:p });
+  },
+
+  /* ---------- player feedback ---------- */
+  hurt(amount){                    // only ever the player, so it reads clearly
+    const big = amount > 26;
+    if (!canPlay(big ? 'hurtBig' : 'hurt', big ? 0.08 : 0.055, 20)) return;
+    if (big){
+      playTone({ f0:300, f1:74,  dur:0.26, type:'sawtooth', gain:0.07,  attack:0.003 });
+      playTone({ f0:96,  f1:38,  dur:0.34, type:'sine',     gain:0.075, delay:0.005 });
+      playNoise({ dur:0.15, gain:0.04, f0:1900, f1:260, q:1.0 });
+    } else {
+      playTone({ f0:400 + rnd(-50,50), f1:150, dur:0.11, type:'sawtooth', gain:0.032 });
+      playNoise({ dur:0.07, gain:0.02, f0:2200, f1:420, q:1.1 });
+    }
+  },
+  heal(x, isPlayer, kind){         // 'regen' = warm chime, 'steal' = quick sparkle
+    const steal = kind === 'steal';
+    if (!canPlay(steal ? 'steal' : 'regen', steal ? 0.22 : 0.75, 12)) return;
+    const p = isPlayer ? 0 : panOf(x);
+    const g = isPlayer ? 1.4 : 0.55;
+    if (steal){
+      playTone({ f0:900,  f1:1500, dur:0.11, type:'sine', gain:0.026*g, pan:p });
+      playTone({ f0:1350, f1:2050, dur:0.10, type:'sine', gain:0.016*g, pan:p, delay:0.035 });
+    } else {
+      playTone({ f0:560, f1:790,  dur:0.24, type:'sine', gain:0.026*g, pan:p, attack:0.03 });
+      playTone({ f0:840, f1:1180, dur:0.26, type:'sine', gain:0.016*g, pan:p, delay:0.07, attack:0.03 });
+    }
+  },
+  block(x){                        // AEGIS eats a hit
+    if (!canPlay('block', 0.08, 18)) return;
+    const p = panOf(x);
+    playTone({ f0:1500, f1:2300, dur:0.13, type:'triangle', gain:0.06, pan:p });
+    playTone({ f0:2300, f1:3300, dur:0.20, type:'sine', gain:0.028, pan:p, delay:0.03 });
+    playNoise({ dur:0.13, gain:0.028, f0:5000, f1:9000, q:2.0, type:'highpass', pan:p });
+  },
+  lowHp(){                         // heartbeat under 25% health
+    if (!canPlay('lowHp', 1.05, 8)) return;
+    playTone({ f0:78, f1:46, dur:0.17, type:'sine', gain:0.075, attack:0.008 });
+    playTone({ f0:64, f1:38, dur:0.20, type:'sine', gain:0.055, delay:0.2, attack:0.008 });
+  },
+
+  /* ---------- movement: the kick ---------- */
+  kick(x, isPlayer){
+    if (isPlayer){
+      // your own kick is loud and punchy — it is the main input, so it must read clearly
+      if (!canPlay('kickP', 0.10, 16)) return;
+      playTone({ f0:230, f1:68, dur:0.14, type:'square', gain:0.07, attack:0.002 });
+      playTone({ f0:92,  f1:44, dur:0.17, type:'sine',   gain:0.06, delay:0.01 });
+      playNoise({ dur:0.09, gain:0.05, f0:2400, f1:400, q:1.2 });
+    } else {
+      // enemy kicks stay quiet, or 11 orbs kicking would swamp the mix
+      if (!canPlay('kickE', 0.09, 10)) return;
+      const p = panOf(x);
+      playTone({ f0:180, f1:80, dur:0.08, type:'square', gain:0.016, pan:p });
+      playNoise({ dur:0.05, gain:0.013, f0:1800, f1:500, q:1.2, pan:p });
+    }
+  },
+
+  /* ---------- abilities: one distinct voice per orb ---------- */
+  slam(x){                         // BRUISER — sub-bass boom + shockwave
+    if (!canPlay('slam', 0.15, 22)) return;
+    const p = panOf(x);
+    playTone({ f0:150, f1:26, dur:0.55, type:'sine',     gain:0.16, pan:p, attack:0.005 });
+    playTone({ f0:90,  f1:22, dur:0.70, type:'triangle', gain:0.10, pan:p, delay:0.02 });
+    playNoise({ dur:0.42, gain:0.12, f0:1800, f1:120, q:0.7, pan:p, power:1.6 });
+    playTone({ f0:1200, f1:400, dur:0.30, type:'sawtooth', gain:0.03, pan:p, delay:0.03 });
+  },
+  divide(x, made){                 // SPLITTER — bubbly ascending pops
+    if (!canPlay('divide', 0.15, 22)) return;
+    const p = panOf(x);
+    const n = Math.max(1, Math.min(3, made || 2));
+    playTone({ f0:240, f1:520, dur:0.30, type:'sine', gain:0.035, pan:p });
+    for (let i=0;i<n;i++){
+      playTone({ f0:380 + i*130, f1:900 + i*180, dur:0.16, type:'triangle', gain:0.05, pan:p, delay:i*0.055 });
+      playNoise({ dur:0.06, gain:0.03, f0:2600, f1:900, q:1.6, pan:p, delay:i*0.055 });
+    }
+  },
+  fenceNode(x){                    // LASER — a node driven into the wall
+    if (!canPlay('fenceNode', 0.12, 22)) return;
+    const p = panOf(x);
+    playTone({ f0:1500, f1:420, dur:0.09, type:'square',   gain:0.040, pan:p, attack:0.002 });
+    playTone({ f0:520,  f1:1040, dur:0.16, type:'triangle', gain:0.032, pan:p, delay:0.05 });
+    playNoise({ dur:0.07, gain:0.030, f0:4200, f1:1100, q:1.8, type:'bandpass', pan:p });
+  },
+  fenceHit(x){                     // LASER — something crossed the fence
+    if (!canPlay('fenceHit', 0.10, 18)) return;
+    const p = panOf(x);
+    playTone({ f0:1900, f1:700, dur:0.10, type:'sawtooth', gain:0.032, pan:p, attack:0.002 });
+    playNoise({ dur:0.09, gain:0.040, f0:5200, f1:1600, q:2.0, type:'bandpass', pan:p });
+  },
+  minePlace(x){                    // TRAPPER — mechanical click + arming beep
+    if (!canPlay('minePlace', 0.12, 20)) return;
+    const p = panOf(x);
+    playTone({ f0:1400, f1:900, dur:0.05, type:'square', gain:0.035, pan:p });
+    playTone({ f0:660, f1:660, dur:0.09, type:'sine', gain:0.03, pan:p, delay:0.06 });
+  },
+  mineArm(x){                      // confirms the mine went live
+    if (!canPlay('mineArm', 0.25, 10)) return;
+    playTone({ f0:1180, f1:1180, dur:0.06, type:'square', gain:0.018, pan:panOf(x) });
+  },
+  mineBoom(x){                     // TRAPPER — detonation
+    if (!canPlay('mineBoom', 0.07, 24)) return;
+    const p = panOf(x);
+    playTone({ f0:170, f1:28, dur:0.50, type:'sine',     gain:0.16, pan:p });
+    playTone({ f0:70,  f1:24, dur:0.65, type:'triangle', gain:0.10, pan:p, delay:0.02 });
+    playNoise({ dur:0.40, gain:0.14, f0:2400, f1:140, q:0.8, pan:p, power:1.5 });
+    playNoise({ dur:0.14, gain:0.07, f0:5200, f1:1400, q:1.6, type:'bandpass', pan:p });
+  },
+  transform(x){                    // TRANSMUTER — rising power-up + chord stab
+    if (!canPlay('transform', 0.2, 22)) return;
+    const p = panOf(x);
+    playTone({ f0:180, f1:1400, dur:0.50, type:'sawtooth', gain:0.055, pan:p, attack:0.03 });
+    playTone({ f0:270, f1:2100, dur:0.45, type:'square',   gain:0.025, pan:p, delay:0.04, attack:0.03 });
+    playNoise({ dur:0.40, gain:0.045, f0:900, f1:4200, q:1.2, type:'bandpass', pan:p, shape:'swell' });
+    [330,415,660].forEach((f,i)=>
+      playTone({ f0:f, f1:f*1.02, dur:0.40, type:'triangle', gain:0.032, pan:p, delay:0.34 + i*0.015 }));
+  },
+  transformEnd(x){                 // the form wearing off
+    if (!canPlay('transformEnd', 0.2, 18)) return;
+    const p = panOf(x);
+    playTone({ f0:900, f1:160, dur:0.30, type:'sawtooth', gain:0.04, pan:p });
+    playTone({ f0:600, f1:110, dur:0.36, type:'triangle', gain:0.03, pan:p, delay:0.05 });
+  },
+  dash(x){                         // PHANTOM — whoosh + shimmer
+    if (!canPlay('dash', 0.12, 22)) return;
+    const p = panOf(x);
+    playNoise({ dur:0.34, gain:0.10, f0:400, f1:6000, q:1.1, type:'bandpass', pan:p, shape:'swell' });
+    playTone({ f0:1500, f1:300, dur:0.28, type:'sine', gain:0.04, pan:p });
+    playTone({ f0:2600, f1:900, dur:0.30, type:'triangle', gain:0.022, pan:p, delay:0.05 });
+  },
+  dashHit(x){                      // anything the phantom passes through
+    if (!canPlay('dashHit', 0.07, 18)) return;
+    const p = panOf(x);
+    playTone({ f0:760, f1:180, dur:0.18, type:'square', gain:0.055, pan:p });
+    playNoise({ dur:0.12, gain:0.05, f0:4200, f1:600, q:1.4, pan:p });
+  },
+
+  /* ---------- deaths ---------- */
+  kill(x){                         // an enemy orb pops
+    if (!canPlay('kill', 0.04, 18)) return;
+    const p = panOf(x);
+    playTone({ f0:560 + rnd(-70,70), f1:150, dur:0.19, type:'triangle', gain:0.05, pan:p });
+    playTone({ f0:190, f1:66, dur:0.24, type:'sine', gain:0.055, pan:p, delay:0.02 });
+    playNoise({ dur:0.13, gain:0.05, f0:3400, f1:520, q:1.3, pan:p });
+  },
+  playerDeath(){
+    if (!canPlay('pdeath', 1.0, 26)) return;
+    playTone({ f0:440, f1:38, dur:1.15, type:'sawtooth', gain:0.13, attack:0.004 });
+    playTone({ f0:150, f1:28, dur:1.25, type:'sine', gain:0.10, delay:0.04 });
+    playNoise({ dur:0.85, gain:0.10, f0:2400, f1:80, q:0.7, power:1.4 });
+  },
+
+  /* ---------- round flow ---------- */
+  countdown(){
+    if (!canPlay('countdown', 0.3, 8)) return;
+    playTone({ f0:520, f1:520, dur:0.10, type:'square', gain:0.05 });
+  },
+  go(){
+    if (!canPlay('go', 0.5, 10)) return;
+    playTone({ f0:520, f1:1040, dur:0.22, type:'square', gain:0.07 });
+    playTone({ f0:780, f1:1560, dur:0.30, type:'triangle', gain:0.05, delay:0.04 });
+  },
+  win(){
+    if (!canPlay('win', 0.8, 22)) return;
+    [523,659,784,1046].forEach((f,i)=>{
+      playTone({ f0:f,   f1:f,   dur:0.26, type:'triangle', gain:0.06, delay:i*0.09 });
+      playTone({ f0:f*2, f1:f*2, dur:0.18, type:'sine',     gain:0.02, delay:i*0.09 });
+    });
+  },
+  lose(){
+    if (!canPlay('lose', 0.8, 22)) return;
+    [392,330,262,175].forEach((f,i)=>{
+      playTone({ f0:f,     f1:f*0.985, dur:0.40, type:'sawtooth', gain:0.07, delay:i*0.14 });
+      playTone({ f0:f*0.5, f1:f*0.5,   dur:0.45, type:'sine',     gain:0.05, delay:i*0.14 });
+    });
+  },
+
+  /* ---------- economy ---------- */
+  coinPayout(n){                   // cascade when a round pays out
+    if (!canPlay('payout', 0.5, 22)) return;
+    const k = clamp(Math.round((n || 0)/14), 3, 10);
+    for (let i=0;i<k;i++){
+      const f = 980 + i*95;
+      playTone({ f0:f, f1:f, dur:0.07, type:'triangle', gain:0.028, delay:i*0.055 });
+    }
+  },
+
+  /* ---------- UI ---------- */
+  ui(){    if (!canPlay('ui', 0.04, 10)) return; playTone({ f0:660, f1:880, dur:0.05, type:'sine', gain:0.03 }); },
+  buy(){
+    if (!canPlay('buy', 0.15, 18)) return;
+    [660,880,1170,1560].forEach((f,i)=>
+      playTone({ f0:f, f1:f, dur:0.16, type:'triangle', gain:0.055, delay:i*0.065 }));
+    playNoise({ dur:0.3, gain:0.02, f0:3000, f1:9000, q:1.6, type:'highpass', shape:'swell' });
+  },
+  equip(){
+    if (!canPlay('equip', 0.08, 12)) return;
+    playTone({ f0:900, f1:1400, dur:0.09, type:'triangle', gain:0.04 });
+    playNoise({ dur:0.05, gain:0.018, f0:4200, f1:1600, q:1.5 });
+  },
+  error(){
+    if (!canPlay('error', 0.2, 10)) return;
+    playTone({ f0:190, f1:130, dur:0.16, type:'square', gain:0.05 });
+    playTone({ f0:150, f1:100, dur:0.20, type:'square', gain:0.04, delay:0.05 });
+  }
+};
+
+/* ---------------------- game state ---------------------- */
+let state = 'menu';
+let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [];
+let player = null;
+let selectedType = 'bruiser';
+let round = 1, score = 0, kills = 0, killsThisRound = 0, nextId = 1;
+let shake = 0, shakeX = 0, shakeY = 0;
+let hitStop = 0, introTimer = 0, elapsed = 0;
+let cdAnnounced = 99;                 // last countdown digit that got a beep
+let loadoutReturn = 'menu';
+const mouse = { x: WORLD.w/2, y: WORLD.h/2 - 150 };
+const keys = Object.create(null);
+let kickHeld = false;                 // click/space held -> keep kicking on cooldown
+
+/* ---------------------- Ball ---------------------- */
+class Ball {
+  constructor(typeKey, x, y, cfg){
+    cfg = cfg || {};
+    const t = TYPES[typeKey];
+    this.id = nextId++;
+    this.typeKey = typeKey;
+    this.t = t;
+
+    this.r = cfg.r != null ? cfg.r : t.r;
+    const s = this.r / t.r;
+    this.mass     = cfg.mass != null ? cfg.mass : t.mass * s * s;
+    this.maxHp    = cfg.maxHp != null ? cfg.maxHp : t.hp * (0.55 + 0.45*s*s);
+    this.hp       = this.maxHp;
+    this.contact  = cfg.contact != null ? cfg.contact : t.contact * (0.6 + 0.4*s);
+    this.kick     = t.kick * (0.85 + 0.15*s);   // impulse a kick delivers
+    this.kickMul  = 1;
+    this.kickCd   = 0;
+    this.maxSpeed = t.maxSpeed;
+
+    this.x = x; this.y = y;
+    this.vx = cfg.vx != null ? cfg.vx : rnd(-150,150);
+    this.vy = cfg.vy != null ? cfg.vy : rnd(-150,150);
+
+    this.side = cfg.side != null ? cfg.side : 1;
+    this.isPlayer = !!cfg.isPlayer;
+    this.gen = cfg.gen || 0;
+
+    this.cd = cfg.cd || 0;
+    this.cdMul = 1;
+    this.abilityMul = 1;
+    this.anchor = null;      // wall contact point while a wall-triggered ability resolves
+    this.fenceTick = 0;      // throttle so a fence damages on a tick, not per frame
+    this.mods = { regen:0, plating:1, vampire:0, shield:0 };
+
+    this.angle = rnd(0, TAU);
+    this.hitFlash = 0;
+    this.transform = 0;
+    this.phase = 0;
+    this.dashHits = null;
+    this.boost = 0;
+    this.kickFlash = 0;
+    this.alive = true;
+    this.trail = [];
+    this.aiTimer = rnd(0,.4);
+    this.aiSeed = Math.random()*1000;
+    this.spawnGrace = 0.35;
+    this.dmgDealt = 0;
+    this.healSfx = 0;
+  }
+  get radius(){ return this.transform > 0 ? this.r*1.18 : this.r; }
+}
+
+/* ---------------------- module application ---------------------- */
+function applyModules(b, list){
+  for (const k of list){
+    switch(k){
+      case 'vitality':  b.maxHp *= 1.22; break;
+      case 'thrusters': b.kick *= 1.18; b.maxSpeed *= 1.18; break;
+      case 'boots':     b.kickMul = 0.72; break;
+      case 'spikes':    b.contact *= 1.30; break;
+      case 'overclock': b.cdMul = 0.78; break;
+      case 'regen':     b.mods.regen = 2; break;
+      case 'plating':   b.mods.plating = 0.82; break;
+      case 'vampire':   b.mods.vampire = 0.15; break;
+      case 'aegis':     b.mods.shield = 1; break;
+      case 'warcore':   b.abilityMul = 1.45; break;
+      case 'swarm':     break;   // handled in startRound
+    }
+  }
+  b.hp = b.maxHp;
+}
+
+/* ---------------------- spawning ---------------------- */
+function spawnChildren(parent){
+  const room = MAX_BALLS - balls.length;
+  if (room <= 0) return 0;
+  const n = Math.min(2, room);
+  const childR = Math.max(11, parent.r * 0.7);
+  let made = 0;
+  for (let i=0;i<n;i++){
+    const a = parent.angle + (i===0 ? 0.8 : -0.8) + rnd(-.2,.2);
+    const c = new Ball(parent.typeKey, parent.x + Math.cos(a)*parent.r*0.55, parent.y + Math.sin(a)*parent.r*0.55, {
+      r: childR,
+      maxHp: Math.max(34, parent.maxHp * 0.42),
+      gen: parent.gen + 1,
+      side: parent.side,
+      vx: parent.vx*0.5 + Math.cos(a)*300,
+      vy: parent.vy*0.5 + Math.sin(a)*300,
+      cd: 1.2
+    });
+    c.boost = 0.6; c.spawnGrace = 0.4;
+    balls.push(c);
+    made++;
+    burst(c.x, c.y, parent.t.c, 10, 220);
+  }
+  return made;
+}
+
+function startRound(n){
+  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = [];
+  nextId = 1;
+  hitStop = 0; shake = 0; elapsed = 0;
+  introTimer = 2.4;
+  cdAnnounced = 99;
+  kickHeld = false;
+  killsThisRound = 0;
+
+  player = new Ball(selectedType, WORLD.w/2, WORLD.h/2, { side:0, isPlayer:true, cd:1.2, vx:0, vy:0 });
+  player.spawnGrace = 1.2;
+  player.maxHp *= 1.25;                     // one orb vs a whole box (enemies also take ENEMY_HP)
+  applyModules(player, save.equipped);
+  player.hp = player.maxHp;
+  balls.push(player);
+
+  // SWARM module: two free minions at the start of every round
+  if (save.equipped.includes('swarm')){
+    for (let i=0;i<2;i++){
+      const a = rnd(0,TAU);
+      const m = new Ball('splitter', player.x + Math.cos(a)*70, player.y + Math.sin(a)*70, {
+        r:16, maxHp:70, gen:1, side:0, cd:1.5
+      });
+      m.spawnGrace = 0.6;
+      balls.push(m);
+    }
+  }
+
+  const count = Math.min(n, 11);          // round 1 is a 1v1 warm-up, then it ramps
+  for (let i=0;i<count;i++){
+    const k = TYPE_KEYS[Math.floor(Math.random()*TYPE_KEYS.length)];
+    let x = 0, y = 0, tries = 0;
+    do {
+      x = rnd(90, WORLD.w-90);
+      y = rnd(90, WORLD.h-90);
+      tries++;
+    } while (Math.hypot(x-player.x, y-player.y) < 260 && tries < 60);
+    const b = new Ball(k, x, y, { side:1, cd: rnd(1.2, 3.2) });
+    b.maxHp     *= ENEMY_HP * (1 + (n-1)*0.055);
+    b.contact   *= ENEMY_DMG;
+    b.abilityMul = ENEMY_DMG;               // their slam / fence / spike hit softer too
+    b.hp = b.maxHp;
+    b.spawnGrace = 0.8;
+    balls.push(b);
+  }
+  updateHud();
+}
+
+/* ---------------------- effects ---------------------- */
+function burst(x, y, color, count, spd, size){
+  if (parts.length > 900) return;
+  for (let i=0;i<count;i++){
+    const a = rnd(0,TAU), v = rnd(spd*0.25, spd);
+    parts.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v, life:rnd(.3,.8), max:.8, c:color, s:size||rnd(1.5,3.6) });
+  }
+}
+function floatText(x, y, str, color, size){
+  if (texts.length > 60) texts.shift();
+  texts.push({ x, y, str, c:color, life:.85, max:.85, s:size||13 });
+}
+function addShake(v){ shake = Math.min(26, shake + v); }
+
+/* ---------------------- damage / death ---------------------- */
+function damage(target, amount, source){
+  if (!target.alive || target.spawnGrace > 0) return;
+  if (target.phase > 0) return;
+
+  let amt = amount;
+  if (target.transform > 0) amt *= 0.7;
+  amt *= target.mods.plating;
+
+  // AEGIS shield eats one solid hit
+  if (target.mods.shield > 0 && amt >= 14){
+    target.mods.shield--;
+    rings.push({ x:target.x, y:target.y, r:target.radius, max:target.radius*2.6, life:.4, t:0, c:'#22d3ee', w:4 });
+    floatText(target.x, target.y - target.radius - 8, 'BLOCKED', '#22d3ee', 14);
+    burst(target.x, target.y, '#22d3ee', 16, 340, 3);
+    SFX.block(target.x); addShake(3);
+    return;
+  }
+
+  target.hp -= amt;
+  target.hitFlash = 0.2;
+  if (source) source.dmgDealt += amt;
+  floatText(target.x + rnd(-8,8), target.y - target.radius - 6, Math.round(amt), source ? source.t.c2 : '#fff', 11);
+
+  // taking damage is only voiced for the player, so the cue stays meaningful
+  if (target.isPlayer) SFX.hurt(amt);
+
+  // VAMPIRE lifesteal
+  if (source && source.alive && source.mods.vampire > 0){
+    const before = source.hp;
+    source.hp = Math.min(source.maxHp, source.hp + amt * source.mods.vampire);
+    if (source.hp > before + 0.5) SFX.heal(source.x, source.isPlayer, 'steal');
+  }
+  if (target.hp <= 0) kill(target, source);
+}
+
+function kill(b, source){
+  if (!b.alive) return;
+  b.alive = false;
+  burst(b.x, b.y, b.t.c, 26, 400, 4);
+  burst(b.x, b.y, '#ffffff', 8, 260, 2.2);
+  rings.push({ x:b.x, y:b.y, r:b.radius, max:b.radius*3.4, life:.42, t:0, c:b.t.c, w:3 });
+
+  if (b.typeKey === 'splitter' && b.gen < 3 && b.r >= 12 && balls.length < MAX_BALLS){
+    spawnChildren(b);
+  }
+  if (b.side === 1){
+    score += 100 + round*25;
+    kills++; killsThisRound++;
+    SFX.kill(b.x); addShake(5);
+  }
+  if (b.isPlayer){
+    SFX.playerDeath(); addShake(24); hitStop = 0.12;
+    setTimeout(()=> gameOver(), 620);
+  }
+  updateHud();
+}
+
+/* ---------------------- abilities ---------------------- */
+function useAbility(b){
+  if (!b.alive || b.cd > 0) return false;
+  const t = b.t;
+  b.cd = t.cd * (b.cdMul || 1);
+  switch (b.typeKey){
+    case 'bruiser':    abilitySlam(b);      break;
+    case 'splitter':   abilityDivide(b);    break;
+    case 'laser':      abilityLaserFence(b); break;
+    case 'trapper':    abilityMine(b);      break;
+    case 'transmuter': abilityTransform(b); break;
+    case 'phantom':    abilityDash(b);      break;
+  }
+  if (b.isPlayer) updateAbilityUi();
+  return true;
+}
+
+/* --- who is closest, and how far --- */
+function nearestEnemy(b){
+  let best = null, bd = Infinity;
+  for (const o of balls){
+    if (!o.alive || o.side === b.side) continue;
+    const d = Math.hypot(o.x-b.x, o.y-b.y);
+    if (d < bd){ bd = d; best = o; }
+  }
+  return best ? { orb:best, d:bd } : null;
+}
+
+/* --- the automatic brain: every orb, the player's included, decides for itself --- */
+function autoThink(b){
+  if (!b.alive) return;
+  const rule = AUTO[b.typeKey];
+  if (!rule || rule.on === 'wall') return;   // wall rules fire from onWallBounce()
+  if (b.cd > 0) return;
+  const e = nearestEnemy(b);
+  if (!e) return;
+  if (rule.on === 'near'){
+    if (e.d < rule.range + b.radius) useAbility(b);
+  } else if (rule.on === 'far'){
+    // commit when there is room to breathe, or when there is nothing left to lose
+    if (e.d > rule.range || b.hp < b.maxHp * 0.6) useAbility(b);
+  }
+}
+
+/* --- BRUISER: shockwave --- */
+function abilitySlam(b){
+  const R = 190 + b.r*1.5;
+  const mul = b.abilityMul;
+  for (const o of balls){
+    if (o === b || !o.alive || o.side === b.side) continue;
+    const d = Math.hypot(o.x-b.x, o.y-b.y);
+    if (d < R + o.radius){
+      const f = clamp(1 - d/(R + o.radius), 0, 1);
+      damage(o, (24 + 40*f) * mul, b);
+      const a = Math.atan2(o.y-b.y, o.x-b.x);
+      const imp = 300 + 520*f;
+      o.vx += Math.cos(a)*imp; o.vy += Math.sin(a)*imp;
+      o.boost = 0.75;
+    }
+  }
+  for (const o of balls){
+    if (o === b || !o.alive || o.side !== b.side) continue;
+    const d = Math.hypot(o.x-b.x, o.y-b.y);
+    if (d < R + o.radius){
+      const a = Math.atan2(o.y-b.y, o.x-b.x);
+      o.vx += Math.cos(a)*140; o.vy += Math.sin(a)*140; o.boost = 0.4;
+    }
+  }
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.7, max:R, life:.5, t:0, c:b.t.c, w:5 });
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.7, max:R*0.72, life:.34, t:0, c:'#ffffff', w:2 });
+  burst(b.x, b.y, b.t.c, 26, 520, 3.4);
+  addShake(11); SFX.slam(b.x);
+  floatText(b.x, b.y - b.radius - 22, 'SLAM', b.t.c, 15);
+}
+
+/* --- SPLITTER: divide --- */
+function abilityDivide(b){
+  if (b.gen >= 3 || b.r < 12 || balls.length + 2 > MAX_BALLS){
+    b.cd = 1.2;
+    floatText(b.x, b.y - b.radius - 18, balls.length + 2 > MAX_BALLS ? 'CAP 30' : 'TOO SMALL', '#ff9aae', 12);
+    return;
+  }
+  b.hp = Math.max(20, b.hp * 0.86);
+  const made = spawnChildren(b);
+  rings.push({ x:b.x, y:b.y, r:b.radius, max:b.radius*2.2, life:.3, t:0, c:b.t.c, w:3 });
+  addShake(4); SFX.divide(b.x, made);
+  floatText(b.x, b.y - b.radius - 20, 'DIVIDE +' + made, b.t.c, 14);
+}
+
+/* --- LASER: a fence strung between wall contacts ---
+   Every wall bounce drives a node into that wall. Nodes pair off in the
+   order they were planted, and each pair strings a live beam between them
+   — two touches, one fence. Anything hostile crossing it gets burned. */
+function addLaserNode(n){
+  // keep each owner's nodes adjacent, so pairing by index stays correct
+  let at = laserNodes.length;
+  for (let i = laserNodes.length - 1; i >= 0; i--){
+    if (laserNodes[i].owner === n.owner){ at = i + 1; break; }
+  }
+  laserNodes.splice(at, 0, n);
+}
+
+function distToSeg(px, py, ax, ay, bx, by){
+  const vx = bx-ax, vy = by-ay, wx = px-ax, wy = py-ay;
+  const L2 = vx*vx + vy*vy;
+  const t = L2 > 0 ? clamp((wx*vx + wy*vy)/L2, 0, 1) : 0;
+  return Math.hypot(px - (ax + vx*t), py - (ay + vy*t));
+}
+
+function abilityLaserFence(b){
+  const a = b.anchor;
+  if (!a){ b.cd = 0.7; return; }            // nodes only plant on a wall touch
+  let own = 0;
+  for (const n of laserNodes) if (n.owner === b.id) own++;
+  if (own >= FENCE_MAX){
+    // retire the oldest node, so the fence keeps following the orb around
+    for (let i = 0; i < laserNodes.length; i++){
+      if (laserNodes[i].owner === b.id){ laserNodes.splice(i, 1); break; }
+    }
+  }
+  addLaserNode({
+    x: a.x, y: a.y, wall: a.wall, owner: b.id, side: b.side,
+    c: b.t.c, c2: b.t.c2, life: FENCE_LIFE, pulse: 0, born: 0
+  });
+  burst(a.x, a.y, b.t.c, 12, 200, 2.6);
+  rings.push({ x:a.x, y:a.y, r:3, max:40, life:.32, t:0, c:b.t.c, w:3 });
+  SFX.fenceNode(a.x);
+  floatText(a.x + (a.wall===0 ? 30 : a.wall===1 ? -30 : 0),
+            a.y + (a.wall===2 ? 26 : a.wall===3 ? -26 : 0), 'NODE', b.t.c, 12);
+}
+
+/* nodes age out; every completed pair burns whatever crosses it */
+function updateFences(dt){
+  for (const o of balls) o.fenceTick = Math.max(-1, o.fenceTick - dt);
+
+  for (let i = laserNodes.length - 1; i >= 0; i--){
+    const n = laserNodes[i];
+    n.life -= dt; n.pulse += dt;
+    n.born = Math.min(1, n.born + dt*4);
+    if (n.life <= 0) laserNodes.splice(i, 1);
+  }
+  if (!laserNodes.length) return;
+
+  let i = 0;
+  while (i < laserNodes.length){
+    let j = i;
+    while (j < laserNodes.length && laserNodes[j].owner === laserNodes[i].owner) j++;
+    for (let k = i; k + 1 < j; k += 2){
+      const a = laserNodes[k], c = laserNodes[k+1];
+      const owner = balls.find(x => x.id === a.owner) || null;
+      for (const o of balls){
+        if (!o.alive || o.side === a.side) continue;
+        if (distToSeg(o.x, o.y, a.x, a.y, c.x, c.y) > o.radius + 9) continue;
+        if (o.fenceTick > 0) continue;
+        o.fenceTick = FENCE_TICK;
+        damage(o, FENCE_DMG * (owner ? owner.abilityMul : 1), owner);
+        o.hitFlash = 0.2;
+        burst(o.x, o.y, a.c, 7, 190, 2.2);
+        SFX.fenceHit(o.x);
+      }
+    }
+    i = j;
+  }
+}
+
+/* --- TRAPPER: mine --- */
+function abilityMine(b){
+  const own = mines.filter(m => m.owner === b.id).length;
+  if (own >= MAX_SPIKES){ b.cd = 1.5; floatText(b.x, b.y-b.radius-18, 'MAX ' + MAX_SPIKES, '#e9d5ff', 12); return; }
+  // drive the spike into the wall that was just touched, nudged inward so the
+  // body stays visible while its trigger ring still reaches out into the arena
+  const a = b.anchor;
+  let mx = b.x, my = b.y, tx = mx, ty = my - 20;
+  if (a){
+    const inset = 13;
+    mx = a.x; my = a.y;
+    if (a.wall === 0){ mx = inset;            tx = mx + 36; ty = my; }
+    else if (a.wall === 1){ mx = WORLD.w - inset; tx = mx - 36; ty = my; }
+    else if (a.wall === 2){ my = inset;            tx = mx; ty = my + 32; }
+    else { my = WORLD.h - inset; tx = mx; ty = my - 32; }
+  }
+  mines.push({
+    x: mx, y: my, r: 10, trig: 62, arm: .45, life: 16, owner: b.id, side: b.side,
+    dmg: 70 * b.abilityMul, blast: 175, c: b.t.c, pulse: 0, wall: a ? a.wall : -1
+  });
+  burst(mx, my, b.t.c, 8, 130, 2.4);
+  SFX.minePlace(mx);
+  floatText(tx, ty, 'SPIKE', b.t.c, 13);
+}
+
+function detonateMine(m){
+  for (const o of balls){
+    if (!o.alive || o.side === m.side) continue;
+    const d = Math.hypot(o.x-m.x, o.y-m.y);
+    if (d < m.blast + o.radius){
+      const f = clamp(1 - d/(m.blast + o.radius), 0, 1);
+      const owner = balls.find(x=>x.id===m.owner) || null;
+      damage(o, m.dmg * (0.4 + 0.6*f), owner);
+      const a = Math.atan2(o.y-m.y, o.x-m.x);
+      const imp = 240 + 520*f;
+      o.vx += Math.cos(a)*imp; o.vy += Math.sin(a)*imp;
+      o.boost = 0.8;
+    }
+  }
+  rings.push({ x:m.x, y:m.y, r:m.r, max:m.blast, life:.42, t:0, c:m.c, w:4 });
+  burst(m.x, m.y, m.c, 30, 460, 3.6);
+  burst(m.x, m.y, '#ffffff', 8, 300, 2);
+  addShake(10); SFX.mineBoom(m.x);
+}
+
+/* --- TRANSMUTER: transform --- */
+function abilityTransform(b){
+  b.transform = 6;
+  b.boost = 0.5;
+  const a = Math.atan2(b.vy, b.vx);
+  b.vx += Math.cos(a)*260; b.vy += Math.sin(a)*260;
+  rings.push({ x:b.x, y:b.y, r:b.radius, max:b.radius*3, life:.45, t:0, c:b.t.c, w:5 });
+  burst(b.x, b.y, b.t.c, 28, 420, 3.4);
+  addShake(6); SFX.transform(b.x);
+  floatText(b.x, b.y - b.radius - 22, 'TRANSFORM', b.t.c, 15);
+}
+
+/* --- PHANTOM: phase dash --- */
+function abilityDash(b){
+  b.phase = 0.4;
+  b.dashHits = new Set();
+  b.boost = 0.85;
+  const sp = 900;
+  b.vx = Math.cos(b.angle)*sp;
+  b.vy = Math.sin(b.angle)*sp;
+  for (let i=0;i<14;i++){
+    parts.push({
+      x: b.x - Math.cos(b.angle)*i*7, y: b.y - Math.sin(b.angle)*i*7,
+      vx: rnd(-40,40), vy: rnd(-40,40), life:.35, max:.35, c:b.t.c, s:3.2
+    });
+  }
+  SFX.dash(b.x);
+  floatText(b.x, b.y - b.radius - 20, 'PHASE', b.t.c, 14);
+}
+
+/* ---------------------- the kick: the only way anything moves ---------------------- */
+function tryKick(b, angle){
+  if (!b.alive || b.kickCd > 0) return false;
+  const a = (angle == null) ? b.angle : angle;
+  b.kickCd = KICK_CD * (b.kickMul || 1);
+
+  // a kick is a velocity change, so light orbs fly further than heavy ones
+  b.vx += Math.cos(a) * b.kick;
+  b.vy += Math.sin(a) * b.kick;
+
+  const sp = Math.hypot(b.vx, b.vy);
+  if (b.boost <= 0 && sp > b.maxSpeed){ b.vx = b.vx/sp*b.maxSpeed; b.vy = b.vy/sp*b.maxSpeed; }
+
+  b.angle = a;
+  b.kickFlash = 0.22;
+  burst(b.x - Math.cos(a)*b.radius, b.y - Math.sin(a)*b.radius, b.t.c2, 5, 190, 2.2);
+  SFX.kick(b.x, b.isPlayer);
+  return true;
+}
+
+/* A wall touch is a trigger. Wall-anchored abilities plant themselves on the
+   exact piece of wall that was hit, so bouncing becomes an offensive act
+   rather than just a change of direction. */
+function onWallBounce(b, wall, cx, cy, speed){
+  if (!b.alive || speed < WALL_FIRE) return;   // a graze along the wall does not count
+  const rule = AUTO[b.typeKey];
+  if (!rule || rule.on !== 'wall') return;
+  if (b.cd > 0) return;
+  b.anchor = { x: cx, y: cy, wall };
+  useAbility(b);
+  b.anchor = null;
+}
+
+/* ---------------------- physics step ---------------------- */
+function physics(dt){
+  // player: aim with the mouse, kick with click/space (or WASD to kick that way)
+  if (player && player.alive){
+    let ax = 0, ay = 0;
+    if (keys['w'] || keys['arrowup'])    ay -= 1;
+    if (keys['s'] || keys['arrowdown'])  ay += 1;
+    if (keys['a'] || keys['arrowleft'])  ax -= 1;
+    if (keys['d'] || keys['arrowright']) ax += 1;
+    if (ax || ay){
+      const a = Math.atan2(ay, ax);
+      player.angle = lerpAngle(player.angle, a, Math.min(1, dt*18));
+      tryKick(player, a);
+    } else {
+      player.angle = lerpAngle(player.angle, Math.atan2(mouse.y-player.y, mouse.x-player.x), Math.min(1, dt*18));
+      if (kickHeld) tryKick(player);
+    }
+    autoThink(player);          // your ability fires itself, same rules as everyone else
+  }
+
+  // AI
+  for (const b of balls){
+    if (!b.alive || b.isPlayer) continue;
+    aiThink(b, dt);
+  }
+
+  // integrate — no drag and no self-thrust: orbs keep whatever momentum they have
+  for (const b of balls){
+    if (!b.alive) continue;
+
+    // speed floor, so the box never settles into a stalemate
+    let sp = Math.hypot(b.vx, b.vy);
+    if (sp < MIN_SPEED){
+      if (sp < 0.001){
+        const a = rnd(0, TAU);
+        b.vx = Math.cos(a)*MIN_SPEED; b.vy = Math.sin(a)*MIN_SPEED;
+      } else {
+        const k = MIN_SPEED/sp;
+        b.vx *= k; b.vy *= k;
+      }
+      sp = MIN_SPEED;
+    }
+    const cap = b.maxSpeed * (b.transform>0 ? 1.3 : 1);
+    if (b.boost <= 0 && sp > cap){ b.vx = b.vx/sp*cap; b.vy = b.vy/sp*cap; }
+    b.x += b.vx*dt; b.y += b.vy*dt;
+
+    // wall rebounds — each wall gets its own pitch, volume scales with speed
+    const R = b.radius;
+    if (b.x - R < 0){
+      const sp = Math.abs(b.vx);
+      b.x = R; b.vx = sp*WALL_REST;
+      if (sp > 70){ SFX.bounce(b.x, 0, clamp(sp/520,0,1)); burst(0, b.y, b.t.c, 3, 90, 2); }
+      onWallBounce(b, 0, 0, b.y, sp);
+    } else if (b.x + R > WORLD.w){
+      const sp = Math.abs(b.vx);
+      b.x = WORLD.w - R; b.vx = -sp*WALL_REST;
+      if (sp > 70){ SFX.bounce(b.x, 1, clamp(sp/520,0,1)); burst(WORLD.w, b.y, b.t.c, 3, 90, 2); }
+      onWallBounce(b, 1, WORLD.w, b.y, sp);
+    }
+    if (b.y - R < 0){
+      const sp = Math.abs(b.vy);
+      b.y = R; b.vy = sp*WALL_REST;
+      if (sp > 70){ SFX.bounce(b.x, 2, clamp(sp/520,0,1)); burst(b.x, 0, b.t.c, 3, 90, 2); }
+      onWallBounce(b, 2, b.x, 0, sp);
+    } else if (b.y + R > WORLD.h){
+      const sp = Math.abs(b.vy);
+      b.y = WORLD.h - R; b.vy = -sp*WALL_REST;
+      if (sp > 70){ SFX.bounce(b.x, 3, clamp(sp/520,0,1)); burst(b.x, WORLD.h, b.t.c, 3, 90, 2); }
+      onWallBounce(b, 3, b.x, WORLD.h, sp);
+    }
+
+    b.cd = Math.max(0, b.cd - dt);
+    b.kickCd = Math.max(0, b.kickCd - dt);
+    b.kickFlash = Math.max(0, b.kickFlash - dt);
+    b.hitFlash = Math.max(0, b.hitFlash - dt);
+    b.spawnGrace = Math.max(0, b.spawnGrace - dt);
+    b.boost = Math.max(0, b.boost - dt);
+    if (b.transform > 0){
+      b.transform = Math.max(0, b.transform - dt);
+      if (b.transform === 0) SFX.transformEnd(b.x);   // the berserker form wearing off
+    }
+    if (b.phase > 0){
+      b.phase = Math.max(0, b.phase - dt);
+      if (b.phase === 0) b.dashHits = null;
+      parts.push({ x:b.x, y:b.y, vx:rnd(-30,30), vy:rnd(-30,30), life:.22, max:.22, c:b.t.c, s:b.radius*0.4 });
+    }
+    if (b.mods.regen > 0 && b.hp < b.maxHp && b.alive){
+      b.hp = Math.min(b.maxHp, b.hp + b.mods.regen*dt);
+      // a soft chime every 0.75s, not a continuous drone
+      b.healSfx += dt;
+      if (b.healSfx >= 0.75){ b.healSfx = 0; SFX.heal(b.x, b.isPlayer, 'regen'); }
+    } else {
+      b.healSfx = 0;
+    }
+
+    b.trail.push({ x:b.x, y:b.y });
+    if (b.trail.length > 9) b.trail.shift();
+  }
+
+  // ball vs ball
+  for (let i=0;i<balls.length;i++){
+    const a = balls[i];
+    if (!a.alive) continue;
+    for (let j=i+1;j<balls.length;j++){
+      const c = balls[j];
+      if (!c.alive) continue;
+      collideBalls(a, c);
+    }
+  }
+
+  // laser fences strung between wall nodes
+  updateFences(dt);
+
+  // mines
+  for (let i=mines.length-1;i>=0;i--){
+    const m = mines[i];
+    const wasUnarmed = m.arm > 0;
+    m.arm -= dt; m.life -= dt; m.pulse += dt;
+    if (wasUnarmed && m.arm <= 0) SFX.mineArm(m.x);   // audible "now armed" tick
+    if (m.life <= 0){ mines.splice(i,1); continue; }
+    if (m.arm > 0) continue;
+    let boom = false;
+    for (const o of balls){
+      if (!o.alive || o.side === m.side) continue;
+      if (Math.hypot(o.x-m.x, o.y-m.y) < m.trig + o.radius){ boom = true; break; }
+    }
+    if (boom){ detonateMine(m); mines.splice(i,1); }
+  }
+
+  // effects
+  for (let i=rings.length-1;i>=0;i--){
+    const r = rings[i];
+    r.t += dt;
+    r.r = r.r + (r.max - r.r) * Math.min(1, dt*11);
+    if (r.t >= r.life) rings.splice(i,1);
+  }
+  for (let i=parts.length-1;i>=0;i--){
+    const p = parts[i];
+    p.life -= dt;
+    if (p.life <= 0){ parts.splice(i,1); continue; }
+    p.x += p.vx*dt; p.y += p.vy*dt;
+    p.vx *= Math.pow(0.94, dt*60); p.vy *= Math.pow(0.94, dt*60);
+  }
+  for (let i=texts.length-1;i>=0;i--){
+    const t = texts[i];
+    t.life -= dt;
+    if (t.life <= 0){ texts.splice(i,1); continue; }
+    t.y -= 26*dt;
+  }
+
+  if (balls.some(b => !b.alive)) balls = balls.filter(b => b.alive);
+}
+
+/* ---------------------- collisions ---------------------- */
+function collideBalls(a, b){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const ra = a.radius, rb = b.radius;
+  const minD = ra + rb;
+  const d2 = dx*dx + dy*dy;
+  if (d2 > minD*minD || d2 === 0) return;
+
+  const d = Math.sqrt(d2);
+  const nx = dx/d, ny = dy/d;
+  const overlap = minD - d;
+
+  const tm = a.mass + b.mass;
+  a.x -= nx * overlap * (b.mass/tm);
+  a.y -= ny * overlap * (b.mass/tm);
+  b.x += nx * overlap * (a.mass/tm);
+  b.y += ny * overlap * (a.mass/tm);
+
+  const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
+  const vn = rvx*nx + rvy*ny;
+  if (vn >= 0) return;
+
+  const e = 0.99;
+  const j = -(1+e) * vn / (1/a.mass + 1/b.mass);
+  a.vx -= j*nx/a.mass; a.vy -= j*ny/a.mass;
+  b.vx += j*nx/b.mass; b.vy += j*ny/b.mass;
+  a.boost = Math.max(a.boost, 0.35);
+  b.boost = Math.max(b.boost, 0.35);
+
+  const impact = Math.abs(vn);
+  const px = a.x + nx*ra, py = a.y + ny*ra;
+
+  // every collision is voiced, graded by how hard the orbs actually met
+  const energy = clamp(impact/620, 0, 1);
+  if (impact > 45){
+    if (energy > 0.60)      SFX.thud(px, energy);
+    else if (energy > 0.24) SFX.knock(px, energy);
+    else                    SFX.tap(px, energy);
+  }
+
+  if (a.phase > 0 && a.dashHits && !a.dashHits.has(b.id)){
+    a.dashHits.add(b.id); damage(b, 56 * a.abilityMul, a); addShake(5); SFX.dashHit(px);
+  }
+  if (b.phase > 0 && b.dashHits && !b.dashHits.has(a.id)){
+    b.dashHits.add(a.id); damage(a, 56 * b.abilityMul, b); addShake(5); SFX.dashHit(px);
+  }
+
+  if (a.side === b.side) return;    // same team: physics only
+
+  // impact scale matches the kick era: orbs now cruise at 520-660, so a solid
+  // head-on meeting lands near 520. /265 was tuned for the old slower regime
+  // and left every hit pinned at the cap.
+  const power = clamp(impact / 520, 0, 2.2);
+  if (power < 0.12) return;
+
+  const mulA = a.transform > 0 ? 2.5 : 1;
+  const mulB = b.transform > 0 ? 2.5 : 1;
+  const dmgA = a.contact * mulA * power;
+  const dmgB = b.contact * mulB * power;
+
+  if (dmgA > 0.5) damage(b, dmgA, a);
+  if (dmgB > 0.5) damage(a, dmgB, b);
+
+  burst(px, py, '#ffffff', Math.min(12, 3 + Math.round(power*5)), 200*power + 80, 2.4);
+  if (power > 0.7) addShake(power*3.2);
+}
+
+/* ---------------------- AI ---------------------- */
+function aiThink(b, dt){
+  let target = null, bestD = Infinity;
+  for (const o of balls){
+    if (!o.alive || o.side === b.side) continue;
+    const d = Math.hypot(o.x-b.x, o.y-b.y);
+    if (d < bestD){ bestD = d; target = o; }
+  }
+
+  b.aiTimer -= dt;
+  if (!target) return;
+
+  // lead the target a little, otherwise a kick always lands behind a moving orb
+  const travel = bestD / Math.max(1, b.maxSpeed);
+  const px = target.x + target.vx * travel * 0.55;
+  const py = target.y + target.vy * travel * 0.55;
+  const aim = Math.atan2(py - b.y, px - b.x) + Math.sin(elapsed*0.8 + b.aiSeed) * 0.18;
+  b.angle = lerpAngle(b.angle, aim, Math.min(1, dt*7));
+
+  // only kick when it actually helps: off course, or running out of speed
+  const sp = Math.hypot(b.vx, b.vy);
+  const velA = sp > 1 ? Math.atan2(b.vy, b.vx) : aim;
+  const off = Math.abs(lerpAngle(0, aim - velA, 1));
+  if (b.kickCd <= 0 && (off > 0.55 || sp < b.maxSpeed * 0.72)){
+    tryKick(b, aim);
+  }
+
+  // abilities are never chosen by hand any more — every orb runs the same
+  // automatic trigger rules, so the player and the AI sit on equal footing
+  autoThink(b);
+}
+
+/* ---------------------- rendering ---------------------- */
+function render(){
+  ctx.setTransform(view.dpr,0,0,view.dpr,0,0);
+
+  // backdrop behind the centred box
+  ctx.fillStyle = '#05070e';
+  ctx.fillRect(0,0,view.w,view.h);
+  const bg = ctx.createRadialGradient(view.w/2, view.h/2, 30, view.w/2, view.h/2, Math.max(view.w,view.h)*0.62);
+  bg.addColorStop(0, 'rgba(46,80,150,.30)');
+  bg.addColorStop(1, 'rgba(5,7,14,0)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,view.w,view.h);
+
+  ctx.save();
+  ctx.translate(view.ox + shakeX, view.oy + shakeY);
+  ctx.scale(view.scale, view.scale);
+
+  drawArena();
+  for (const m of mines) drawMine(m);
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of balls){
+    for (let i=0;i<b.trail.length;i++){
+      const p = b.trail[i];
+      const f = (i+1)/b.trail.length;
+      ctx.globalAlpha = f*0.10;
+      ctx.fillStyle = b.t.c;
+      ctx.beginPath(); ctx.arc(p.x, p.y, b.radius*f*0.85, 0, TAU); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  for (const r of rings){
+    const f = 1 - r.t/r.life;
+    ctx.globalAlpha = f*0.85;
+    ctx.strokeStyle = r.c;
+    ctx.lineWidth = (r.w||4) * f;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, TAU); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  for (const b of balls) drawBall(b);
+
+  // laser fences: a live beam between every completed pair of wall nodes
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  let fi = 0;
+  while (fi < laserNodes.length){
+    let fj = fi;
+    while (fj < laserNodes.length && laserNodes[fj].owner === laserNodes[fi].owner) fj++;
+    for (let k = fi; k + 1 < fj; k += 2){
+      const a = laserNodes[k], c = laserNodes[k+1];
+      const fade = Math.min(1, a.life/1.2, c.life/1.2);
+      const born = Math.min(a.born, c.born);
+      const flick = 0.82 + 0.18*Math.sin(elapsed*22 + k*1.7);
+      ctx.globalAlpha = fade * born * flick;
+      ctx.strokeStyle = a.c; ctx.lineWidth = 7; ctx.shadowColor = a.c; ctx.shadowBlur = 22;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.2; ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      // a spark crawling the fence reads as "live"
+      const tt = (elapsed*0.55 + k*0.31) % 1;
+      ctx.globalAlpha = fade * born * 0.9;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(a.x + (c.x-a.x)*tt, a.y + (c.y-a.y)*tt, 2.6, 0, TAU); ctx.fill();
+    }
+    fi = fj;
+  }
+  // the nodes themselves, pinned where the orb hit the wall
+  for (const n of laserNodes){
+    const fade = Math.min(1, n.life/1.2) * n.born;
+    const pulse = 1 + 0.22*Math.sin(n.pulse*7);
+    ctx.globalAlpha = fade*0.85;
+    ctx.fillStyle = n.c; ctx.shadowColor = n.c; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(n.x, n.y, 5.5*pulse, 0, TAU); ctx.fill();
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(n.x, n.y, 2.2, 0, TAU); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of parts){
+    const f = p.life/p.max;
+    ctx.globalAlpha = f;
+    ctx.fillStyle = p.c;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.s*f, 0, TAU); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const t of texts){
+    const f = t.life/t.max;
+    ctx.globalAlpha = f;
+    ctx.font = '800 ' + t.s + 'px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = t.c;
+    ctx.shadowColor = 'rgba(0,0,0,.85)'; ctx.shadowBlur = 6;
+    ctx.fillText(t.str, t.x, t.y);
+  }
+  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+
+  if (player && player.alive && state === 'playing'){
+    const ready = player.kickCd <= 0;
+    const total = KICK_CD * (player.kickMul || 1);
+    const charge = 1 - clamp(player.kickCd / total, 0, 1);
+
+    // aim guide — solid and bright when the kick is ready, dashed and dim while recharging
+    ctx.save();
+    ctx.globalAlpha = ready ? 0.55 : 0.16;
+    ctx.strokeStyle = player.t.c2; ctx.lineWidth = ready ? 1.6 : 1.2;
+    ctx.setLineDash(ready ? [] : [6, 7]);
+    ctx.beginPath();
+    ctx.moveTo(player.x + Math.cos(player.angle)*(player.radius+8), player.y + Math.sin(player.angle)*(player.radius+8));
+    ctx.lineTo(mouse.x, mouse.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = ready ? 0.75 : 0.28;
+    ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 9, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 2.5, 0, TAU); ctx.fillStyle = player.t.c2; ctx.fill();
+    ctx.restore();
+
+    // recharge ring around the orb
+    if (!ready){
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = player.t.c2;
+      ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, 0, player.radius + 15, -Math.PI/2, -Math.PI/2 + TAU*charge);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  ctx.restore();
+
+  // round-start countdown, drawn in screen space above everything
+  if (introTimer > 0 && state === 'playing'){
+    ctx.setTransform(view.dpr,0,0,view.dpr,0,0);
+    const n = Math.ceil(introTimer);
+    const frac = 1 - (introTimer % 1);
+    const pop = 1 + (1-frac)*0.22;
+    ctx.save();
+    ctx.translate(view.w/2, view.h/2);
+    ctx.scale(pop, pop);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '900 24px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(160,200,255,.8)';
+    ctx.fillText('ROUND ' + round, 0, -70);
+    ctx.font = '900 108px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#4de1ff'; ctx.shadowBlur = 46;
+    ctx.fillText(n > 0 ? String(n) : 'GO!', 0, 6);
+    ctx.restore();
+  }
+}
+
+function drawArena(){
+  const g = ctx.createRadialGradient(WORLD.w/2, WORLD.h/2, 50, WORLD.w/2, WORLD.h/2, WORLD.w*0.68);
+  g.addColorStop(0, '#101a2e');
+  g.addColorStop(0.55, '#0a1020');
+  g.addColorStop(1, '#05070e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,WORLD.w,WORLD.h);
+
+  const G = 48;
+  ctx.strokeStyle = 'rgba(90,140,230,.075)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x=G; x<WORLD.w; x+=G){ ctx.moveTo(x,0); ctx.lineTo(x,WORLD.h); }
+  for (let y=G; y<WORLD.h; y+=G){ ctx.moveTo(0,y); ctx.lineTo(WORLD.w,y); }
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(90,140,230,.10)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(WORLD.w/2, WORLD.h/2, 130, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.arc(WORLD.w/2, WORLD.h/2, 235, 0, TAU); ctx.stroke();
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(90,160,255,.75)';
+  ctx.shadowBlur = 26;
+  ctx.strokeStyle = 'rgba(120,180,255,.55)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, WORLD.w-4, WORLD.h-4);
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(140,200,255,.5)';
+  ctx.lineWidth = 3;
+  const L = 40;
+  const corners = [[0,0,1,1],[WORLD.w,0,-1,1],[0,WORLD.h,1,-1],[WORLD.w,WORLD.h,-1,-1]];
+  for (const [cx,cy,sx,sy] of corners){
+    ctx.beginPath();
+    ctx.moveTo(cx+sx*9, cy+sy*L); ctx.lineTo(cx+sx*9, cy+sy*9); ctx.lineTo(cx+sx*L, cy+sy*9);
+    ctx.stroke();
+  }
+}
+
+function drawMine(m){
+  const armed = m.arm <= 0;
+  const blink = armed ? (0.55 + 0.45*Math.sin(m.pulse*9)) : 0.3;
+  const dying = m.life < 3 ? (0.35 + 0.65*Math.abs(Math.sin(m.life*7))) : 1;
+
+  ctx.save();
+  ctx.globalAlpha = dying;
+  ctx.translate(m.x, m.y);
+
+  if (armed){
+    ctx.globalAlpha = 0.07 * blink * dying;
+    ctx.fillStyle = m.c;
+    ctx.beginPath(); ctx.arc(0,0, m.trig, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.34 * dying;
+    ctx.strokeStyle = m.c; ctx.lineWidth = 1.2;
+    ctx.setLineDash([5,7]); ctx.lineDashOffset = -m.pulse*18;
+    ctx.beginPath(); ctx.arc(0,0, m.trig, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.globalAlpha = dying;
+  ctx.shadowColor = m.c; ctx.shadowBlur = armed ? 18*blink : 6;
+  ctx.fillStyle = armed ? m.c : 'rgba(140,140,160,.7)';
+  ctx.beginPath(); ctx.arc(0,0, m.r, 0, TAU); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = 'rgba(0,0,0,.55)';
+  ctx.beginPath(); ctx.arc(0,0, m.r*0.5, 0, TAU); ctx.fill();
+
+  ctx.strokeStyle = armed ? m.c : 'rgba(150,150,170,.6)';
+  ctx.lineWidth = 2;
+  for (let i=0;i<6;i++){
+    const a = i/6*TAU + m.pulse*0.6;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*m.r*0.7, Math.sin(a)*m.r*0.7);
+    ctx.lineTo(Math.cos(a)*(m.r+5), Math.sin(a)*(m.r+5));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBall(b){
+  const R = b.radius;
+  const t = b.t;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+
+  if (b.spawnGrace > 0){
+    ctx.globalAlpha = 0.5 + 0.5*Math.sin(elapsed*22);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0,0,R+7,0,TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (b.transform > 0){
+    const spin = elapsed*2.4;
+    const n = 12;
+    ctx.fillStyle = t.c;
+    ctx.shadowColor = t.c; ctx.shadowBlur = 20;
+    ctx.beginPath();
+    for (let i=0;i<n*2;i++){
+      const a = spin + i/(n*2)*TAU;
+      const rr = (i%2===0) ? R*1.42 : R*0.98;
+      const px = Math.cos(a)*rr, py = Math.sin(a)*rr;
+      if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  if (b.phase > 0) ctx.globalAlpha = 0.55;
+
+  ctx.shadowColor = t.c;
+  ctx.shadowBlur = b.transform > 0 ? 40 : 24;
+  const g = ctx.createRadialGradient(-R*0.34, -R*0.38, R*0.08, 0, 0, R);
+  g.addColorStop(0, t.c2);
+  g.addColorStop(0.5, t.c);
+  g.addColorStop(1, t.c);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0,0,R,0,TAU); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.globalAlpha *= 0.55;
+  ctx.strokeStyle = 'rgba(255,255,255,.55)';
+  ctx.lineWidth = Math.max(1, R*0.07);
+  ctx.beginPath(); ctx.arc(0,0,R*0.82, 0, TAU); ctx.stroke();
+  ctx.globalAlpha /= 0.55;
+
+  if (b.hitFlash > 0){
+    ctx.globalAlpha = Math.min(1, b.hitFlash*4.2);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(0,0,R,0,TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = 'rgba(0,0,0,.5)';
+  ctx.font = '900 ' + Math.max(9, R*0.72) + 'px ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(t.name[0], 0, 1);
+  ctx.globalAlpha = 1;
+
+  if (b.isPlayer){
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.2;
+    ctx.globalAlpha = 0.55 + 0.45*Math.sin(elapsed*3.4);
+    ctx.beginPath(); ctx.arc(0,0,R+9,0,TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(b.angle)*(R+4), Math.sin(b.angle)*(R+4));
+    ctx.arc(Math.cos(b.angle)*(R+4), Math.sin(b.angle)*(R+4), 3.4, 0, TAU);
+    ctx.fill();
+  }
+
+  const p = clamp(b.hp/b.maxHp, 0, 1);
+  if (p < 1 || !b.isPlayer){
+    ctx.strokeStyle = 'rgba(0,0,0,.45)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0,0,R+6, -Math.PI/2, -Math.PI/2 + TAU*0.999); ctx.stroke();
+    ctx.strokeStyle = hpColor(p);
+    ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0,0,R+6, -Math.PI/2, -Math.PI/2 + TAU*p); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ---------------------- HUD ---------------------- */
+const el = id => document.getElementById(id);
+
+function updateHud(){
+  const alive = balls.filter(b=>b.alive);
+  const enemies = alive.filter(b=>b.side===1).length;
+  el('hRound').textContent = round;
+  el('hEnemies').textContent = enemies;
+  el('hScore').textContent = score;
+  el('hCoins').textContent = save.coins;
+  el('hBalls').innerHTML = alive.length + '<span style="font-size:11px;color:var(--dim)">/' + MAX_BALLS + '</span>';
+
+  if (player){
+    const p = clamp(player.hp/player.maxHp, 0, 1);
+    el('hpfill').style.width = (p*100)+'%';
+    el('hpfill').style.background = hpColor(p);
+    el('phpTxt').textContent = Math.max(0, Math.ceil(player.hp)) + ' / ' + Math.ceil(player.maxHp);
+    el('porb').style.background = 'radial-gradient(circle at 32% 30%, ' + player.t.c2 + ', ' + player.t.c + ')';
+    el('porb').style.color = player.t.c;
+  }
+}
+function updateAbilityUi(){
+  if (!player) return;
+  const rule = AUTO[player.typeKey];
+  el('ablabel').textContent = player.t.ability;
+  const total = player.t.cd * (player.cdMul || 1);
+  const p = 1 - clamp(player.cd / total, 0, 1);
+  el('abfill').style.height = ((1-p)*100) + '%';
+  el('abicon').style.borderColor = p >= 1 ? player.t.c : 'rgba(130,170,255,.16)';
+  el('abicon').style.boxShadow = p >= 1 ? '0 0 18px -4px ' + player.t.c : 'none';
+  // the panel reports what the ability is waiting for, not a key to press
+  const key = el('abkey');
+  if (key){
+    key.textContent = p < 1
+      ? (Math.max(0, total - player.cd)).toFixed(1) + 's'
+      : (rule && rule.on === 'wall' ? 'ON WALL' : 'AUTO');
+    key.style.color = p >= 1 ? player.t.c : 'var(--dim)';
+  }
+}
+function renderModRow(){
+  const row = el('modrow');
+  row.innerHTML = '';
+  for (const k of save.equipped){
+    const m = MODULES[k];
+    const d = document.createElement('div');
+    d.className = 'modchip';
+    d.style.setProperty('--c', m.color);
+    d.textContent = m.icon;
+    d.title = m.name + ' — ' + m.desc;
+    row.appendChild(d);
+  }
+}
+
+let toastTimer = 0;
+function toast(msg, color, dur){
+  const t = el('toast');
+  t.textContent = msg;
+  t.style.color = color || '#fff';
+  t.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.style.opacity = '0'; }, dur || 1300);
+}
+
+/* ---------------------- flow ---------------------- */
+const SCREENS = ['menu','loadoutScreen','clearScreen','overScreen','pauseScreen'];
+function showScreen(id){
+  SCREENS.forEach(s => el(s).classList.toggle('hidden', s !== id));
+  el('hud').classList.toggle('hidden', !!id);
+}
+function hideAllScreens(){
+  SCREENS.forEach(s => el(s).classList.add('hidden'));
+  el('hud').classList.remove('hidden');
+}
+
+function beginGame(){
+  initAudio();
+  round = 1; score = 0; kills = 0;
+  save.runs++;
+  persist();
+  startRound(round);
+  hideAllScreens();
+  state = 'playing';
+  renderModRow(); updateHud(); updateAbilityUi();
+}
+
+function nextRound(){
+  round++;
+  startRound(round);
+  hideAllScreens();
+  state = 'playing';
+  updateHud(); updateAbilityUi();
+}
+
+function gameOver(){
+  state = 'over';
+  const earned = Math.floor(score/12) + kills*2;
+  save.coins += earned;
+  save.totalKills += kills;
+  if (round > save.bestRound) save.bestRound = round;
+  if (score > save.bestScore) save.bestScore = score;
+  persist();
+  SFX.lose();
+  SFX.coinPayout(earned);
+
+  el('ovScore').textContent = score;
+  el('ovRound').textContent = round;
+  el('ovKills').textContent = kills;
+  el('ovCoins').textContent = '+' + earned;
+  el('overSub').textContent = 'You survived ' + round + (round===1?' round':' rounds') + ' and destroyed ' + kills + ' orbs';
+  const nb = [];
+  if (round >= save.bestRound) nb.push('BEST ROUND: ' + save.bestRound);
+  if (score >= save.bestScore && score > 0) nb.push('BEST SCORE: ' + save.bestScore);
+  el('overBest').textContent = nb.join('   \u00B7   ');
+  showScreen('overScreen');
+}
+
+function roundClear(){
+  state = 'clear';
+  const bonus = 400 + round*150;
+  score += bonus;
+  const earned = 40 + round*12 + killsThisRound*4;
+  save.coins += earned;
+  save.totalKills += killsThisRound;
+  if (round > save.bestRound) save.bestRound = round;
+  persist();
+  SFX.win();
+  SFX.coinPayout(earned);
+
+  const p = player ? clamp(player.hp/player.maxHp,0,1) : 0;
+  el('csScore').textContent = score;
+  el('csKills').textContent = killsThisRound;
+  el('csHp').textContent = Math.round(p*100) + '%';
+  el('csCoins').textContent = '+' + earned;
+  el('clearSub').textContent = 'Round ' + round + ' complete \u00B7 +' + bonus + ' score bonus';
+  showScreen('clearScreen');
+}
+
+function togglePause(force){
+  if (state === 'playing' && force !== false){ state = 'paused'; showScreen('pauseScreen'); }
+  else if (state === 'paused' && force !== true){ state = 'playing'; hideAllScreens(); }
+}
+
+/* ---------------------- loadout screen ---------------------- */
+function renderLoadout(){
+  el('loCoins').textContent = save.coins;
+
+  const sr = el('slotRow');
+  sr.innerHTML = '';
+  for (let i=0;i<SLOTS;i++){
+    const k = save.equipped[i];
+    const d = document.createElement('div');
+    d.className = 'slot' + (k ? ' filled' : '');
+    if (k){
+      const m = MODULES[k];
+      d.style.setProperty('--c', m.color);
+      d.innerHTML = '<span class="ic">' + m.icon + '</span><span class="nm">' + m.name + '</span>';
+      d.title = 'Click to unequip';
+      d.addEventListener('click', ()=>{
+        save.equipped.splice(i,1);
+        persist(); SFX.equip(); renderLoadout(); renderModRow();
+      });
+    } else {
+      d.innerHTML = '<span class="ic">+</span><span class="nm">EMPTY SLOT</span>';
+    }
+    sr.appendChild(d);
+  }
+
+  const g = el('modGrid');
+  g.innerHTML = '';
+  for (const k of MODULE_KEYS){
+    const m = MODULES[k];
+    const owned = save.owned.includes(k);
+    const equipped = save.equipped.includes(k);
+    const d = document.createElement('div');
+    d.className = 'mod' + (owned ? ' owned' : '') + (equipped ? ' eq' : '');
+    d.style.setProperty('--c', m.color);
+
+    let btn;
+    if (equipped)      btn = '<button class="mbtn eqb">EQUIPPED \u2713</button>';
+    else if (owned)    btn = '<button class="mbtn">EQUIP</button>';
+    else               btn = '<button class="mbtn buy"' + (save.coins < m.price ? ' disabled' : '') + '>BUY \u25C6' + m.price + '</button>';
+
+    d.innerHTML = '<div class="mh"><span class="ic">' + m.icon + '</span><span class="nm">' + m.name + '</span></div>' +
+                  '<div class="md">' + m.desc + '</div>' + btn;
+
+    d.querySelector('button').addEventListener('click', ()=>{
+      if (equipped){
+        save.equipped = save.equipped.filter(x => x !== k);
+        SFX.equip();
+      } else if (owned){
+        if (save.equipped.length >= SLOTS){ SFX.error(); toast('LOADOUT FULL', '#ff5470', 1000); return; }
+        save.equipped.push(k);
+        SFX.equip();
+      } else {
+        if (save.coins < m.price){ SFX.error(); return; }
+        save.coins -= m.price;
+        save.owned.push(k);
+        if (save.equipped.length < SLOTS) save.equipped.push(k);
+        SFX.buy();
+        toast('UNLOCKED ' + m.name, m.color, 1200);
+      }
+      persist(); renderLoadout(); renderModRow();
+    });
+    g.appendChild(d);
+  }
+}
+
+function openLoadout(from){
+  loadoutReturn = from || 'menu';
+  renderLoadout();
+  showScreen('loadoutScreen');
+  SFX.ui();
+}
+function closeLoadout(){
+  SFX.ui();
+  // return the player to wherever they opened the loadout from
+  if (loadoutReturn === 'clear' && state === 'clear'){ showScreen('clearScreen'); return; }
+  if (loadoutReturn === 'over' && state === 'over'){ showScreen('overScreen'); return; }
+  state = 'menu';
+  showScreen('menu');
+  renderMenuStats();
+}
+
+/* ---------------------- input ---------------------- */
+/* browsers keep the audio context suspended until the first user gesture */
+['pointerdown','keydown','touchstart'].forEach(ev =>
+  window.addEventListener(ev, ()=> initAudio(), { passive:true }));
+
+function setMuted(v){
+  muted = !!v;
+  save.muted = muted;
+  persist();
+  el('btnMute').style.color = muted ? '#ff5470' : '';
+  // also cut any voices already ringing out
+  if (masterGain && actx){
+    masterGain.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.02);
+  }
+}
+
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if ([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
+  keys[k] = true;
+
+  if (k === 'p' || k === 'escape'){
+    if (state === 'playing' || state === 'paused') togglePause();
+    return;
+  }
+  if (k === 'm'){ setMuted(!muted); return; }
+  if (k === ' '){
+    if (state === 'playing') kickHeld = true;          // hold space to keep kicking
+    else if (state === 'clear') nextRound();
+    return;
+  }
+  if (state === 'over' && k === 'r') beginGame();
+  if (state === 'clear' && k === 'enter') nextRound();
+});
+window.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = false;
+  if (k === ' ') kickHeld = false;
+});
+
+cv.addEventListener('mousemove', e => {
+  const r = cv.getBoundingClientRect();
+  mouse.x = (e.clientX - r.left - view.ox)/view.scale;
+  mouse.y = (e.clientY - r.top  - view.oy)/view.scale;
+});
+cv.addEventListener('mousedown', e => {
+  e.preventDefault();
+  if (state !== 'playing' || !player || !player.alive) return;
+  kickHeld = true;                            // left or right, any click kicks
+});
+window.addEventListener('mouseup', ()=>{ kickHeld = false; });
+window.addEventListener('blur', ()=>{ kickHeld = false; });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+cv.addEventListener('touchstart', e=>{
+  const t = e.touches[0]; const r = cv.getBoundingClientRect();
+  mouse.x = (t.clientX - r.left - view.ox)/view.scale;
+  mouse.y = (t.clientY - r.top  - view.oy)/view.scale;
+  if (state !== 'playing' || !player || !player.alive) return;
+  kickHeld = true;                                 // tap anywhere to kick
+}, {passive:true});
+cv.addEventListener('touchmove', e=>{
+  const t = e.touches[0]; const r = cv.getBoundingClientRect();
+  mouse.x = (t.clientX - r.left - view.ox)/view.scale;
+  mouse.y = (t.clientY - r.top  - view.oy)/view.scale;
+}, {passive:true});
+cv.addEventListener('touchend',     ()=>{ kickHeld = false; }, {passive:true});
+cv.addEventListener('touchcancel',  ()=>{ kickHeld = false; }, {passive:true});
+
+/* ---------------------- menu build ---------------------- */
+function renderMenuStats(){
+  el('mCoins').textContent = save.coins;
+  el('mBestRound').textContent = save.bestRound;
+  el('mBestScore').textContent = save.bestScore;
+  el('mKills').textContent = save.totalKills;
+  el('mRuns').textContent = save.runs;
+}
+
+function buildMenu(){
+  const grid = el('typeGrid');
+  grid.innerHTML = '';
+  TYPE_KEYS.forEach(k => {
+    const t = TYPES[k];
+    const d = document.createElement('div');
+    d.className = 'opt' + (k === selectedType ? ' sel' : '');
+    d.style.setProperty('--c', t.c);
+    d.style.setProperty('--c2', t.c2);
+    d.innerHTML =
+      '<div class="dot"></div>' +
+      '<div class="nm">' + t.name + '</div>' +
+      '<div class="tg">' + t.tag + '</div>' +
+      '<div class="ds">' + t.desc + '</div>' +
+      '<div class="st">' + t.stats.map(s=>'<i>'+s+'</i>').join('') + '</div>';
+    d.addEventListener('click', ()=>{
+      selectedType = k;
+      save.orb = k; persist();
+      SFX.ui();
+      [...grid.children].forEach(c=>c.classList.remove('sel'));
+      d.classList.add('sel');
+      el('porb').style.background = 'radial-gradient(circle at 32% 30%, '+t.c2+', '+t.c+')';
+      el('porb').style.color = t.c;
+      el('pnameTxt').textContent = t.name;
+    });
+    grid.appendChild(d);
+  });
+}
+
+el('btnStart').addEventListener('click', ()=>{ SFX.ui(); beginGame(); });
+el('btnNext').addEventListener('click', ()=>{ SFX.ui(); nextRound(); });
+el('btnRetry').addEventListener('click', ()=>{ SFX.ui(); beginGame(); });
+el('btnMenu').addEventListener('click', ()=>{ SFX.ui(); state='menu'; showScreen('menu'); renderMenuStats(); });
+el('btnLoadout').addEventListener('click', ()=> openLoadout('menu'));
+el('btnSpend').addEventListener('click', ()=> openLoadout('clear'));
+el('btnOverLoadout').addEventListener('click', ()=> openLoadout('over'));
+el('btnLoadoutBack').addEventListener('click', closeLoadout);
+el('btnResume').addEventListener('click', ()=>{ SFX.ui(); togglePause(); });
+el('btnQuit').addEventListener('click', ()=>{ SFX.ui(); state='menu'; showScreen('menu'); renderMenuStats(); });
+el('btnPause').addEventListener('click', ()=>{ if (state==='playing'||state==='paused') togglePause(); });
+el('btnMute').addEventListener('click', ()=> setMuted(!muted));
+
+/* ---------------------- main loop ---------------------- */
+let last = performance.now();
+let acc = 0;
+const FIXED = 1/120;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt = (now - last)/1000;
+  last = now;
+  if (dt > 0.25) dt = 0.25;
+
+  // safety net: if the window changed size and the event was missed, refit now
+  if (view.w !== window.innerWidth || view.h !== window.innerHeight) resize();
+
+  if (state === 'playing'){
+    if (introTimer > 0){
+      introTimer = Math.max(0, introTimer - dt);
+      const digit = Math.ceil(introTimer);
+      if (digit !== cdAnnounced){          // a beep on each new countdown digit
+        cdAnnounced = digit;
+        if (digit > 0) SFX.countdown(); else SFX.go();
+      }
+      acc = 0;
+    } else if (hitStop > 0){
+      hitStop -= dt;
+    } else {
+      acc += dt;
+      let guard = 0;
+      while (acc >= FIXED && guard++ < 12){
+        physics(FIXED);
+        acc -= FIXED;
+      }
+    }
+    elapsed += dt;
+
+    shake *= Math.pow(0.86, dt*60);
+    if (shake < 0.15) shake = 0;
+    shakeX = rnd(-shake, shake);
+    shakeY = rnd(-shake, shake);
+
+    updateHud();
+    updateAbilityUi();
+
+    // heartbeat kicks in when the player is nearly dead (self-throttled)
+    if (player && player.alive && player.hp/player.maxHp < 0.25) SFX.lowHp();
+
+    if (player && player.alive){
+      const enemies = balls.filter(b=>b.alive && b.side===1).length;
+      if (enemies === 0) roundClear();
+    }
+  }
+
+  if (state === 'menu'){
+    ctx.setTransform(view.dpr,0,0,view.dpr,0,0);
+    ctx.fillStyle = '#05070e';
+    ctx.fillRect(0,0,view.w,view.h);
+    ctx.save();
+    ctx.translate(view.ox, view.oy);
+    ctx.scale(view.scale, view.scale);
+    drawArena();
+    ctx.restore();
+  } else {
+    render();
+  }
+}
+
+/* ---------------------- boot ---------------------- */
+resize();
+loadSave();
+selectedType = save.orb;
+muted = !!save.muted;
+if (muted) el('btnMute').style.color = '#ff5470';
+buildMenu();
+renderMenuStats();
+el('porb').style.background = 'radial-gradient(circle at 32% 30%, ' + TYPES[selectedType].c2 + ', ' + TYPES[selectedType].c + ')';
+el('porb').style.color = TYPES[selectedType].c;
+el('pnameTxt').textContent = TYPES[selectedType].name;
+renderModRow();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
