@@ -503,14 +503,18 @@ const CRAWL_TIME    = 1.6;             // seconds of i-frames
 const CRAWL_BOOST   = 2.6;             // contact multiplier while crawling
 
 /* ---- venator (admin) ---- */
-const FIGHTER_CAP   = 5;               // squadron size
+const FIGHTER_CAP   = 15;              // squadron size
 const FIGHTER_LIFE  = 14;              // seconds a fighter stays on station
-const FIGHTER_R     = 9;               // hull radius for hits and drawing
+const FIGHTER_R     = 13;              // hull radius for hits and drawing
 const FIGHTER_SPEED = 430;             // pursuit speed
-const FIGHTER_DMG   = 34;              // ARC-170 heavy cannons, per shot
-const VWING_DMG     = 18;              // V-wing rapid lasers, per shot
-const YWING_DMG     = 90;              // Y-wing proton torpedo, per run
-const FIGHTER_CD    = 0.55;            // seconds between a fighter's shots
+const LAAT_DMG      = 110;             // LAAT gunship: beam cannon + rockets
+const LAAT_CD       = 2.4;             // it hits like a building, but rarely
+const ARC_DMG       = 34;              // ARC-170 heavy cannons
+const ARC_CD        = 0.55;
+const JSTAR_DMG     = 22;              // Delta-7 laser cannons
+const JSTAR_CD      = 0.35;
+const JINT_DMG      = 14;              // Eta-2 twin rapid lasers
+const JINT_CD       = 0.22;
 const FIGHTER_RANGE = 260;             // how far a fighter will open fire from
 const BOLT_CAP      = 100000;          // hard ceiling on starfighter damage, per the brief
 
@@ -637,8 +641,8 @@ const TYPES = {
     r:32, mass:5.0, hp:880, kick:520, maxSpeed:840,
     contact:30, ability:'LAUNCH FIGHTER', cd:2.2,
     admin:true,
-    desc:'Admin orb. A flying hangar: every use launches a Republic starfighter — an ARC-170 with heavy cannons, a V-wing with rapid lasers, or a Y-wing hauling proton torpedoes. The squadron hunts on its own and hits with the weapons it was built with.',
-    stats:['MASS 5.0','FLEET x5','KICK 520']
+    desc:'Admin orb. A flying hangar: every use launches a Republic ship at random — an LAAT gunship with its beam cannon, an ARC-170 on heavy cannons, a Jedi Starfighter, or a Jedi Interceptor on twin rapid lasers. Up to fifteen of them hunt on their own and hit with the weapons they were built with.',
+    stats:['MASS 5.0','FLEET x15','KICK 520']
   },
   omega: {
     key:'omega', name:'OMEGA', tag:'Admin',
@@ -1163,14 +1167,17 @@ const SFX = {
     playNoise({ dur:0.4, gain:0.07, f0:600, f1:3400, q:1.6, type:'bandpass', pan:p, shape:'swell' });
     playTone({ f0:340, f1:900, dur:0.35, type:'triangle', gain:0.04, pan:p, attack:0.02 });
   },
-  fighterShot(x, kind){            // cannons vs lasers vs a torpedo
+  fighterShot(x, kind){            // a different voice per ship class
     if (!canPlay('fshot', 0.05, 26)) return;
     const p = panOf(x);
-    if (kind === 'Y-wing'){
-      playTone({ f0:160, f1:50, dur:0.4, type:'sine', gain:0.09, pan:p });
-      playNoise({ dur:0.3, gain:0.07, f0:900, f1:140, q:1.0, pan:p });
-    } else if (kind === 'V-wing'){
-      playTone({ f0:1400 + rnd(-120,120), f1:520, dur:0.06, type:'square', gain:0.02, pan:p, attack:0.001 });
+    if (kind === 'LAAT gunship'){
+      // beam cannon plus a rocket thump
+      playTone({ f0:120, f1:40, dur:0.45, type:'sine', gain:0.10, pan:p });
+      playNoise({ dur:0.35, gain:0.08, f0:800, f1:120, q:1.0, pan:p });
+    } else if (kind === 'Jedi Interceptor'){
+      playTone({ f0:1700 + rnd(-140,140), f1:640, dur:0.05, type:'square', gain:0.018, pan:p, attack:0.001 });
+    } else if (kind === 'Jedi Starfighter'){
+      playTone({ f0:1250 + rnd(-110,110), f1:480, dur:0.07, type:'square', gain:0.024, pan:p, attack:0.001 });
     } else {
       playTone({ f0:900 + rnd(-80,80), f1:300, dur:0.09, type:'sawtooth', gain:0.03, pan:p, attack:0.001 });
     }
@@ -2021,26 +2028,25 @@ function updateSabers(dt){
 }
 
 /* --- VENATOR: launch the next fighter of the squadron ---
-   The roster rotates so a full hangar is two ARCs, two V-wings and a Y-wing. */
+   The hangar rotates through four Republic classes, picked at random. */
 const FIGHTER_TYPES = [
-  { kind:'ARC-170', dmg:FIGHTER_DMG, cd:FIGHTER_CD,   c:'#f87171' },
-  { kind:'V-wing',  dmg:VWING_DMG,   cd:FIGHTER_CD*0.5, c:'#fca5a5' },
-  { kind:'ARC-170', dmg:FIGHTER_DMG, cd:FIGHTER_CD,   c:'#f87171' },
-  { kind:'Y-wing',  dmg:YWING_DMG,   cd:2.4,           c:'#fbbf24' },
-  { kind:'V-wing',  dmg:VWING_DMG,   cd:FIGHTER_CD*0.5, c:'#fca5a5' },
+  { kind:'LAAT gunship',     dmg:LAAT_DMG, cd:LAAT_CD,  c:'#f87171', size:1.65 },
+  { kind:'ARC-170',          dmg:ARC_DMG,  cd:ARC_CD,   c:'#f87171', size:1.15 },
+  { kind:'Jedi Starfighter', dmg:JSTAR_DMG,cd:JSTAR_CD, c:'#a5f3fc', size:1.0  },
+  { kind:'Jedi Interceptor', dmg:JINT_DMG, cd:JINT_CD,  c:'#c4b5fd', size:0.9  },
 ];
 function abilityLaunch(b){
   const mine = fighters.filter(f => f.owner === b.id && f.alive);
   if (mine.length >= FIGHTER_CAP){
-    // hangar full: the oldest fighter peels off and strafes once more, harder
+    // hangar full: the oldest fighter peels off for its final pass
     mine[0].life = Math.min(mine[0].life, 1.2);
     floatText(b.x, b.y - b.radius - 18, 'HANGAR FULL', '#fca5a5', 11);
     return;
   }
-  const spec = FIGHTER_TYPES[mine.length % FIGHTER_TYPES.length];
+  const spec = FIGHTER_TYPES[Math.floor(Math.random()*FIGHTER_TYPES.length)];
   const a = rnd(0, TAU);
   fighters.push({
-    owner:b.id, side:b.side, spec,
+    owner:b.id, side:b.side, spec, size:spec.size,
     x:b.x + Math.cos(a)*(b.radius+14), y:b.y + Math.sin(a)*(b.radius+14),
     vx:Math.cos(a)*260, vy:Math.sin(a)*260,
     angle:a, life:FIGHTER_LIFE, alive:true, shotCd:0.4, seed:Math.random()*100
@@ -2808,36 +2814,66 @@ function drawFighters(){
     ctx.save();
     ctx.translate(f.x, f.y);
     ctx.rotate(f.angle);
+    ctx.scale(f.size || 1, f.size || 1);
     ctx.globalAlpha = fade;
-    // hull
     ctx.fillStyle = '#d7dde8';
     ctx.strokeStyle = 'rgba(0,0,0,.45)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    if (f.spec.kind === 'Y-wing'){
-      // a stubby bomber: wide hull + two engine nacelles
-      ctx.roundRect(-9, -3.6, 15, 7.2, 2.5);
+    if (f.spec.kind === 'LAAT gunship'){
+      // a chunky twin-cockpit gunship with wing mounts
+      ctx.roundRect(-11, -5.5, 22, 11, 4);
       ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#8b93a3';
-      ctx.beginPath(); ctx.roundRect(-9, -8, 6, 16, 2); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(-14, -2.2, 5, 4.4, 1.5); ctx.fill();  // tail
+      ctx.beginPath(); ctx.roundRect(-2, -10.5, 5, 4, 1.5); ctx.fill();    // top wing
+      ctx.beginPath(); ctx.roundRect(-2, 6.5, 5, 4, 1.5); ctx.fill();      // bottom wing
       ctx.fillStyle = f.spec.c;
-      ctx.beginPath(); ctx.arc(5.5, 0, 2, 0, TAU); ctx.fill();   // torpedo mouth
-    } else {
-      // a fighter: long nose, swept wings
-      ctx.moveTo(11, 0);
-      ctx.lineTo(-2, -8.5);
-      ctx.lineTo(-8, -3.2);
-      ctx.lineTo(-8, 3.2);
-      ctx.lineTo(-2, 8.5);
+      ctx.fillRect(-8, -4.4, 3, 8.8);                                      // red stripe
+      ctx.fillStyle = '#9fd8ff';
+      ctx.beginPath(); ctx.arc(8.5, -2.6, 1.9, 0, TAU); ctx.fill();        // two cockpits
+      ctx.beginPath(); ctx.arc(8.5, 2.6, 1.9, 0, TAU); ctx.fill();
+    } else if (f.spec.kind === 'ARC-170'){
+      // a heavy fighter: long hull, wide s-foils, tail guns
+      ctx.moveTo(14, 0);
+      ctx.lineTo(-2, -9.5);
+      ctx.lineTo(-10, -4);
+      ctx.lineTo(-10, 4);
+      ctx.lineTo(-2, 9.5);
       ctx.closePath();
       ctx.fill(); ctx.stroke();
-      // red Republic stripes
       ctx.fillStyle = f.spec.c;
-      ctx.fillRect(-6, -7.2, 2.4, 3.4);
-      ctx.fillRect(-6, 3.8, 2.4, 3.4);
-      // cockpit
+      ctx.fillRect(-7.5, -8, 3, 4);
+      ctx.fillRect(-7.5, 4, 3, 4);
       ctx.fillStyle = '#9fd8ff';
-      ctx.beginPath(); ctx.arc(3, 0, 1.9, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(4.5, 0, 2.2, 0, TAU); ctx.fill();
+    } else if (f.spec.kind === 'Jedi Starfighter'){
+      // the Delta-7: slim arrowhead with astromech hump
+      ctx.moveTo(13, 0);
+      ctx.lineTo(-3, -5);
+      ctx.lineTo(-9, -2.5);
+      ctx.lineTo(-9, 2.5);
+      ctx.lineTo(-3, 5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#8b93a3';
+      ctx.beginPath(); ctx.arc(-1, -3.4, 2, 0, TAU); ctx.fill();           // R2 unit
+      ctx.fillStyle = f.spec.c;
+      ctx.beginPath(); ctx.arc(2, 0, 2.6, 0, TAU); ctx.fill();             // cockpit
+    } else {
+      // the Eta-2: compact interceptor, twin cannons
+      ctx.moveTo(11, 0);
+      ctx.lineTo(-4, -6.5);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-4, 6.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#8b93a3';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(-2, -4.5); ctx.lineTo(9, -4.5); ctx.stroke();  // cannon spars
+      ctx.beginPath(); ctx.moveTo(-2, 4.5); ctx.lineTo(9, 4.5); ctx.stroke();
+      ctx.fillStyle = f.spec.c;
+      ctx.beginPath(); ctx.arc(1.5, 0, 2.4, 0, TAU); ctx.fill();           // cockpit
     }
     ctx.restore();
   }
