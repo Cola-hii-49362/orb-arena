@@ -127,6 +127,27 @@
     background:rgba(255,255,255,.08);border:1px solid var(--line);border-bottom-width:2px;
     border-radius:5px;padding:1.5px 6px;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text);margin:0 2px;
   }
+
+  /* ---------- admin access ---------- */
+  .adminbtn{
+    display:grid;place-items:center;width:30px;height:30px;border-radius:10px;cursor:pointer;
+    border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--dim);transition:.16s;flex:0 0 auto;
+  }
+  .adminbtn:hover{color:var(--text);border-color:rgba(255,255,255,.32);background:rgba(255,255,255,.09)}
+  .adminbtn.on{color:#ff2fd0;border-color:rgba(255,47,208,.6);box-shadow:0 0 18px -6px #ff2fd0}
+  .card.narrow{width:min(430px,100%)}
+  .pwrow{display:flex;gap:9px;margin-top:20px}
+  .pwrow input{
+    flex:1;min-width:0;padding:12px 14px;border-radius:11px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--text);font-size:13px;font-family:inherit;
+    letter-spacing:.1em;outline:none;transition:.16s;
+  }
+  .pwrow input::placeholder{color:var(--dim);letter-spacing:.18em;text-transform:uppercase;font-size:11px}
+  .pwrow input:focus{border-color:#ff2fd0;box-shadow:0 0 0 3px rgba(255,47,208,.14)}
+  .adminmsg{margin-top:13px;font-size:10.5px;letter-spacing:.12em;text-align:center;min-height:15px;text-transform:uppercase}
+  .opt.admin{border-color:rgba(255,47,208,.5);background:rgba(255,47,208,.06)}
+  .opt.admin .tg{color:#ff2fd0}
+  .opt.admin .dot{box-shadow:0 0 22px #ff2fd0}
   .big{font-size:clamp(26px,4.6vw,42px);font-weight:800;letter-spacing:.14em;text-align:center;margin-bottom:6px}
   .stats{display:flex;gap:24px;justify-content:center;margin:20px 0 24px;flex-wrap:wrap}
   .stat{text-align:center}
@@ -233,6 +254,13 @@
       <div class="statpill">Best Score<b id="mBestScore">0</b></div>
       <div class="statpill">Total Kills<b id="mKills">0</b></div>
       <div class="statpill">Runs<b id="mRuns">0</b></div>
+      <button id="btnAdmin" class="adminbtn" title="Admin access">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10.5" width="16" height="10" rx="2.5"></rect>
+          <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"></path>
+        </svg>
+      </button>
     </div>
     <div class="grid" id="typeGrid"></div>
     <div class="row">
@@ -305,6 +333,23 @@
   </div>
 </div>
 
+<!-- ================= ADMIN ================= -->
+<div class="screen hidden" id="adminScreen">
+  <div class="card narrow">
+    <div class="big" style="color:#ff2fd0">ADMIN ACCESS</div>
+    <div class="sub" id="adminSub">Restricted orb</div>
+    <div class="pwrow">
+      <input id="adminPw" type="password" autocomplete="off" autocapitalize="off"
+             spellcheck="false" placeholder="password" />
+      <button class="cta sm" id="btnAdminGo">Unlock</button>
+    </div>
+    <div class="adminmsg" id="adminMsg"></div>
+    <div class="row" style="margin-top:20px">
+      <button class="cta ghost" id="btnAdminBack">Back</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================= PAUSE ================= -->
 <div class="screen hidden" id="pauseScreen">
   <div class="card">
@@ -344,7 +389,31 @@ const AUTO = {
   trapper:    { on:'wall'            },   // every wall touch drives in a spike
   transmuter: { on:'near', range:170 },   // transform just before contact
   phantom:    { on:'near', range:390 },   // dash in from range
+  frost:      { on:'near', range:205 },   // chill them as they commit to the charge
+  magnet:     { on:'near', range:345 },   // open a well while they are still far
+  tesla:      { on:'near', range:330 },   // arc across a crowd
+  ricochet:   { on:'wall'             },   // every bounce banks a charge
+  omega:      { on:'near', range:430 },   // admin: collapse anything in sight
 };
+
+/* ---- status-effect tuning ---- */
+const CHILL_MUL  = 0.45;               // a chilled orb keeps 45% of its top speed
+const WELL_LIFE  = 2.6;                // seconds a gravity well holds
+const WELL_R     = 215;                // its pull radius
+const WELL_PULL  = 640;                // acceleration it applies at the centre
+const WELL_DMG   = 13;                 // the crush: damage per tick while held
+const WELL_TICK  = 0.3;                // seconds between crush ticks
+const MOM_MAX    = 8;                  // ricochet charge stacks
+const MOM_TIME   = 4.0;                // seconds before unspent charge decays
+const MOM_DMG    = 0.14;               // outgoing contact bonus per stack
+const MOM_SPD    = 0.07;               // top-speed bonus per stack
+/* The charge has to be a one-way buff. Contact damage is symmetric in this
+   game (the same `contact` figure is what you deal AND what you take), so a
+   charge that only raised `contact` made RICOCHET hit harder and die faster
+   in the same breath. This resistance is what makes the stack worth holding. */
+const MOM_RESIST = 0.052;              // incoming damage cut per stack (42% at 8)
+const ARC_CHAIN  = 4;                  // max targets one chain arc can reach
+const ARC_RANGE  = 300;                // how far an arc will jump to the next orb
 const FENCE_LIFE = 12;                 // seconds a laser fence node survives
 const FENCE_MAX  = 7;                  // nodes per owner (7 -> 3 fences + 1 spare)
 const FENCE_DMG  = 28;                 // damage per fence tick (112 dps while you are on it)
@@ -408,9 +477,58 @@ const TYPES = {
     contact:11, ability:'PHASE DASH', cd:3.4,
     desc:'The lightest orb — it takes a kick harder and flies further than anything else. PHASE DASH fires itself at range, blinking across the arena to hit brutally.',
     stats:['MASS 1.4','DMG 11','KICK 420']
+  },
+
+  /* ---- second wave: control, gravity, chain damage, momentum ---- */
+  frost: {
+    key:'frost', name:'FROST', tag:'Control',
+    c:'#7dd3fc', c2:'#e0f2fe',
+    r:24, mass:2.3, hp:212, kick:350, maxSpeed:560,
+    contact:12, ability:'FREEZE', cd:5.2,
+    desc:'FREEZE fires itself the moment an enemy closes in, chilling everything nearby. Chilled orbs lose more than half their top speed for several seconds — suddenly they cannot outrun you.',
+    stats:['MASS 2.3','CHILL 55%','KICK 350']
+  },
+  magnet: {
+    key:'magnet', name:'MAGNET', tag:'Gravity',
+    c:'#6366f1', c2:'#c7d2fe',
+    r:26, mass:2.6, hp:210, kick:340, maxSpeed:545,
+    contact:11, ability:'GRAVITY WELL', cd:6.4,
+    desc:'GRAVITY WELL tears open a point in space that drags every enemy toward it for 2.6 seconds, crushing them for 43 a second while they are held. They arrive bunched together and right in front of you.',
+    stats:['MASS 2.6','CRUSH 43/s','KICK 340']
+  },
+  tesla: {
+    key:'tesla', name:'TESLA', tag:'Chain',
+    c:'#e879f9', c2:'#fae8ff',
+    r:23, mass:2.0, hp:205, kick:355, maxSpeed:570,
+    contact:11, ability:'CHAIN ARC', cd:4.5,
+    desc:'CHAIN ARC leaps from one enemy to the next, up to four of them, losing power with every jump. The tighter they are packed, the more of it they eat — which makes it a perfect partner for a gravity well.',
+    stats:['MASS 2.0','CHAIN x4','KICK 355']
+  },
+  ricochet: {
+    key:'ricochet', name:'RICOCHET', tag:'Momentum',
+    c:'#cbd5e1', c2:'#ffffff',
+    r:21, mass:1.6, hp:230, kick:400, maxSpeed:640,
+    contact:14, ability:'MOMENTUM', cd:0.85,
+    desc:'Every wall you hit banks a charge: +14% contact damage, +7% top speed and −5% damage taken per bounce, up to eight. Stop bouncing for four seconds and you lose the lot. Fragile when it is caught flat-footed, brutal once it is rolling.',
+    stats:['MASS 1.6','STACK x8','KICK 400']
+  },
+
+  /* ---- secret: only reachable through the admin password ---- */
+  omega: {
+    key:'omega', name:'OMEGA', tag:'Admin',
+    c:'#ff2fd0', c2:'#ffffff',
+    r:34, mass:6.5, hp:950, kick:560, maxSpeed:900,
+    contact:48, ability:'SINGULARITY', cd:3.0,
+    admin:true,
+    desc:'Admin orb. SINGULARITY collapses the arena around you: it chills every enemy, hauls them in, and hits them for up to 160 on the way. Nothing in the box can outrun you, out-hit you, or out-last you.',
+    stats:['MASS 6.5','DMG 48','KICK 560']
   }
 };
-const TYPE_KEYS = Object.keys(TYPES);
+const ALL_TYPE_KEYS = Object.keys(TYPES);
+const ADMIN_KEY = 'omega';
+// enemies never draw from the admin pool
+const TYPE_KEYS = ALL_TYPE_KEYS.filter(k => !TYPES[k].admin);
+const ADMIN_PASSWORD = '152103starwar';
 
 /* ---------------------- modules (inventory items) ---------------------- */
 const MODULES = {
@@ -439,7 +557,8 @@ function defaultSave(){
     v:1, coins:0, runs:0, totalKills:0,
     bestRound:0, bestScore:0,
     owned:[], equipped:[],
-    orb:'bruiser', muted:false
+    orb:'bruiser', muted:false,
+    admin:false
   };
 }
 let save = defaultSave();
@@ -457,7 +576,9 @@ function loadSave(){
     if (!Array.isArray(save.equipped)) save.equipped = [];
     save.owned = save.owned.filter(k => MODULES[k]);
     save.equipped = save.equipped.filter(k => MODULES[k]).slice(0, SLOTS);
-    if (!TYPES[save.orb]) save.orb = 'bruiser';
+    save.admin = !!save.admin;
+    // a locked admin orb cannot be held, even if it is sitting in the save file
+    if (!TYPES[save.orb] || (TYPES[save.orb].admin && !save.admin)) save.orb = 'bruiser';
     save.coins = Math.max(0, Math.floor(save.coins) || 0);
   }catch(e){ save = defaultSave(); }
 }
@@ -826,6 +947,49 @@ const SFX = {
     playTone({ f0:760, f1:180, dur:0.18, type:'square', gain:0.055, pan:p });
     playNoise({ dur:0.12, gain:0.05, f0:4200, f1:600, q:1.4, pan:p });
   },
+  freeze(x){                       // FROST — crystalline crackle over a deep chill
+    if (!canPlay('freeze', 0.15, 24)) return;
+    const p = panOf(x);
+    playTone({ f0:2200, f1:520, dur:0.30, type:'triangle', gain:0.050, pan:p, attack:0.002 });
+    playTone({ f0:140,  f1:60,  dur:0.55, type:'sine',     gain:0.090, pan:p });
+    playNoise({ dur:0.34, gain:0.060, f0:7000, f1:1800, q:3.2, type:'bandpass', pan:p });
+    [1760, 2340, 3130].forEach((f,i)=>
+      playTone({ f0:f, f1:f*0.55, dur:0.22, type:'sine', gain:0.022, pan:p, delay:0.05 + i*0.045 }));
+  },
+  well(x){                         // MAGNET — a low sucking drone that bends downward
+    if (!canPlay('well', 0.25, 20)) return;
+    const p = panOf(x);
+    playTone({ f0:90,  f1:34, dur:0.85, type:'sine',     gain:0.110, pan:p, attack:0.06 });
+    playTone({ f0:260, f1:70, dur:0.70, type:'triangle', gain:0.035, pan:p, attack:0.05 });
+    playNoise({ dur:0.75, gain:0.050, f0:900, f1:180, q:1.0, type:'bandpass', pan:p, shape:'swell' });
+  },
+  arc(x, jumps){                   // TESLA — a crack, thinning with every jump
+    if (!canPlay('arc', 0.10, 22)) return;
+    const p = panOf(x);
+    const n = Math.max(1, Math.min(ARC_CHAIN, jumps || 1));
+    playNoise({ dur:0.10, gain:0.075, f0:6000, f1:1400, q:2.6, type:'bandpass', pan:p });
+    playTone({ f0:1800, f1:420, dur:0.13, type:'sawtooth', gain:0.045, pan:p, attack:0.001 });
+    for (let i=1;i<n;i++){
+      playNoise({ dur:0.07, gain:Math.max(0.02, 0.05 - i*0.008), f0:5200 - i*700, f1:1200, q:2.2, type:'bandpass', pan:p, delay:i*0.055 });
+    }
+  },
+  momentum(x, stacks){             // RICOCHET — the charge climbs with the stack
+    if (!canPlay('momentum', 0.09, 18)) return;
+    const p = panOf(x);
+    const n = Math.max(1, Math.min(MOM_MAX, stacks || 1));
+    const f = 320 + n*90;
+    playTone({ f0:f, f1:f*1.9, dur:0.10, type:'square', gain:0.028 + n*0.004, pan:p, attack:0.001 });
+    playNoise({ dur:0.05, gain:0.018, f0:3000, f1:900, q:1.4, pan:p });
+  },
+  singularity(x){                  // OMEGA — admin. It is meant to sound unfair.
+    if (!canPlay('singularity', 0.4, 30)) return;
+    const p = panOf(x);
+    playTone({ f0:400,  f1:20, dur:1.30, type:'sine',     gain:0.20, pan:p, attack:0.006 });
+    playTone({ f0:120,  f1:16, dur:1.50, type:'triangle', gain:0.14, pan:p, attack:0.010 });
+    playTone({ f0:1800, f1:60, dur:1.10, type:'sawtooth', gain:0.07, pan:p, attack:0.004 });
+    playNoise({ dur:0.90, gain:0.16, f0:3200, f1:60, q:0.7, pan:p, power:1.6 });
+    playNoise({ dur:0.45, gain:0.08, f0:8000, f1:2200, q:2.4, type:'bandpass', pan:p });
+  },
 
   /* ---------- deaths ---------- */
   kill(x){                         // an enemy orb pops
@@ -899,7 +1063,7 @@ const SFX = {
 
 /* ---------------------- game state ---------------------- */
 let state = 'menu';
-let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [];
+let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [], wells = [], arcs = [];
 let player = null;
 let selectedType = 'bruiser';
 let round = 1, score = 0, kills = 0, killsThisRound = 0, nextId = 1;
@@ -944,6 +1108,10 @@ class Ball {
     this.abilityMul = 1;
     this.anchor = null;      // wall contact point while a wall-triggered ability resolves
     this.fenceTick = 0;      // throttle so a fence damages on a tick, not per frame
+    this.wellTick = 0;       // throttle for gravity-well crush damage
+    this.chill = 0;          // seconds of speed debuff remaining
+    this.momentum = 0;       // ricochet charge stacks
+    this.momTimer = 0;       // how long the charge survives without a bounce
     this.mods = { regen:0, plating:1, vampire:0, shield:0 };
 
     this.angle = rnd(0, TAU);
@@ -1011,7 +1179,7 @@ function spawnChildren(parent){
 }
 
 function startRound(n){
-  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = [];
+  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = []; wells = []; arcs = [];
   nextId = 1;
   hitStop = 0; shake = 0; elapsed = 0;
   introTimer = 2.4;
@@ -1080,6 +1248,8 @@ function damage(target, amount, source){
   let amt = amount;
   if (target.transform > 0) amt *= 0.7;
   amt *= target.mods.plating;
+  // a banked momentum charge blunts what comes back at you
+  if (target.momentum > 0) amt *= 1 - MOM_RESIST * target.momentum;
 
   // AEGIS shield eats one solid hit
   if (target.mods.shield > 0 && amt >= 14){
@@ -1142,6 +1312,11 @@ function useAbility(b){
     case 'trapper':    abilityMine(b);      break;
     case 'transmuter': abilityTransform(b); break;
     case 'phantom':    abilityDash(b);      break;
+    case 'frost':      abilityFreeze(b);    break;
+    case 'magnet':     abilityWell(b);      break;
+    case 'tesla':      abilityArc(b);       break;
+    case 'ricochet':   abilityMomentum(b);  break;
+    case 'omega':      abilitySingularity(b); break;
   }
   if (b.isPlayer) updateAbilityUi();
   return true;
@@ -1370,6 +1545,142 @@ function abilityDash(b){
   floatText(b.x, b.y - b.radius - 20, 'PHASE', b.t.c, 14);
 }
 
+/* --- FROST: freezing burst --- */
+function abilityFreeze(b){
+  const R = 205 + b.r*1.4;
+  for (const o of balls){
+    if (!o.alive || o.side === b.side) continue;
+    const d = Math.hypot(o.x-b.x, o.y-b.y);
+    if (d >= R + o.radius) continue;
+    const f = clamp(1 - d/(R + o.radius), 0, 1);
+    damage(o, (26 + 40*f) * b.abilityMul, b);
+    o.chill = Math.max(o.chill, 1.8 + 1.8*f);   // deepest chill at point blank
+    o.hitFlash = Math.max(o.hitFlash, 0.2);
+  }
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.8, max:R,       life:.55, t:0, c:b.t.c, w:5 });
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.8, max:R*0.7,   life:.36, t:0, c:'#ffffff', w:2 });
+  burst(b.x, b.y, b.t.c, 26, 400, 3.2);
+  addShake(7); SFX.freeze(b.x);
+  floatText(b.x, b.y - b.radius - 22, 'FREEZE', b.t.c, 15);
+}
+
+/* --- MAGNET: gravity well --- */
+function abilityWell(b){
+  const e = nearestEnemy(b);
+  // open it on the enemy if there is one, otherwise straight ahead
+  const tx = clamp(e ? e.orb.x : b.x + Math.cos(b.angle)*220, 40, WORLD.w-40);
+  const ty = clamp(e ? e.orb.y : b.y + Math.sin(b.angle)*220, 40, WORLD.h-40);
+  wells.push({ x:tx, y:ty, r:WELL_R, life:WELL_LIFE, t:0, pull:WELL_PULL, side:b.side, owner:b.id, c:b.t.c });
+  rings.push({ x:tx, y:ty, r:10, max:WELL_R, life:.6, t:0, c:b.t.c, w:4 });
+  burst(tx, ty, b.t.c, 18, 260, 2.8);
+  addShake(5); SFX.well(b.x);
+  floatText(tx, ty - 26, 'WELL', b.t.c, 14);
+}
+
+/* --- TESLA: chain arc --- */
+function abilityArc(b){
+  const hit = new Set();
+  const segs = [];
+  let from = b, dmg = 46 * b.abilityMul, jumps = 0;
+  for (let i = 0; i < ARC_CHAIN; i++){
+    let best = null, bd = Infinity;
+    for (const o of balls){
+      if (!o.alive || o.side === b.side || hit.has(o.id)) continue;
+      const d = Math.hypot(o.x-from.x, o.y-from.y);
+      // the first jump reaches anywhere; later jumps only bridge a short gap
+      if (d > (i === 0 ? 9999 : ARC_RANGE) || d >= bd) continue;
+      bd = d; best = o;
+    }
+    if (!best) break;
+    segs.push({ x1:from.x, y1:from.y, x2:best.x, y2:best.y });
+    damage(best, dmg, b);
+    best.hitFlash = 0.28;
+    burst(best.x, best.y, b.t.c, 9, 240, 2.4);
+    hit.add(best.id);
+    from = best; dmg *= 0.78; jumps++;
+  }
+  if (jumps){
+    arcs.push({ segs, life:.3, t:0, c:b.t.c, seed: Math.random()*100 });
+    addShake(5);
+  }
+  SFX.arc(b.x, jumps);
+  floatText(b.x, b.y - b.radius - 22, jumps > 1 ? 'ARC x' + jumps : 'ARC', b.t.c, 14);
+}
+
+/* --- RICOCHET: bank every bounce --- */
+function abilityMomentum(b){
+  b.momentum = Math.min(MOM_MAX, b.momentum + 1);
+  b.momTimer = MOM_TIME;
+  // the charge also gives a shove, so a stack pays off the instant you bank it
+  const a = Math.atan2(b.vy, b.vx);
+  b.vx += Math.cos(a)*26; b.vy += Math.sin(a)*26;
+  burst(b.x, b.y, b.t.c, 6, 160, 2.2);
+  SFX.momentum(b.x, b.momentum);
+  if (b.momentum >= MOM_MAX) floatText(b.x, b.y - b.radius - 20, 'MAX CHARGE', b.t.c, 13);
+}
+
+/* --- OMEGA (admin): singularity --- */
+function abilitySingularity(b){
+  const R = 400;
+  for (const o of balls){
+    if (!o.alive || o.side === b.side) continue;
+    const dx = b.x - o.x, dy = b.y - o.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d >= R + o.radius) continue;
+    const f = clamp(1 - d/(R + o.radius), 0, 1);
+    damage(o, (70 + 90*f) * b.abilityMul, b);
+    o.vx += (dx/d) * (430 + 540*f);      // hauled toward the centre
+    o.vy += (dy/d) * (430 + 540*f);
+    o.chill = Math.max(o.chill, 2.4);
+    o.boost = 0.9;
+    o.hitFlash = 0.3;
+  }
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:R,       life:.6,  t:0, c:b.t.c, w:7 });
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:R*0.66,  life:.45, t:0, c:'#ffffff', w:3 });
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:R*0.34,  life:.3,  t:0, c:b.t.c, w:9 });
+  burst(b.x, b.y, b.t.c, 44, 700, 4.2);
+  burst(b.x, b.y, '#ffffff', 18, 460, 3);
+  addShake(24); hitStop = 0.05;
+  SFX.singularity(b.x);
+  floatText(b.x, b.y - b.radius - 26, 'SINGULARITY', b.t.c, 17);
+}
+
+/* --- status effects --- */
+function updateWells(dt){
+  for (const o of balls) o.wellTick = Math.max(-1, o.wellTick - dt);
+
+  for (let i = wells.length-1; i >= 0; i--){
+    const w = wells[i];
+    w.t += dt;
+    if (w.t >= w.life){ wells.splice(i,1); continue; }
+    const fade = 1 - w.t/w.life;
+    for (const o of balls){
+      if (!o.alive || o.side === w.side) continue;
+      const dx = w.x - o.x, dy = w.y - o.y;
+      const d = Math.hypot(dx, dy);
+      if (d >= w.r || d < 1) continue;
+      const f = (1 - d/w.r) * fade;
+      o.vx += (dx/d) * w.pull * f * dt;
+      o.vy += (dy/d) * w.pull * f * dt;
+      o.boost = Math.max(o.boost, 0.25);    // a well may override the speed cap
+      // the crush: anything held in the field takes damage on a tick
+      if (o.wellTick > 0) continue;
+      o.wellTick = WELL_TICK;
+      const owner = balls.find(x => x.id === w.owner) || null;
+      damage(o, WELL_DMG * (owner ? owner.abilityMul : 1), owner);
+      burst(o.x, o.y, w.c, 5, 150, 2);
+    }
+  }
+}
+function updateArcs(dt){
+  for (let i = arcs.length-1; i >= 0; i--){
+    arcs[i].t += dt;
+    if (arcs[i].t >= arcs[i].life) arcs.splice(i,1);
+  }
+}
+/* ricochet charge feeds both damage and top speed */
+function contactOf(b){ return b.contact * (1 + MOM_DMG*(b.momentum || 0)); }
+
 /* ---------------------- the kick: the only way anything moves ---------------------- */
 function tryKick(b, angle){
   if (!b.alive || b.kickCd > 0) return false;
@@ -1445,7 +1756,10 @@ function physics(dt){
       }
       sp = MIN_SPEED;
     }
-    const cap = b.maxSpeed * (b.transform>0 ? 1.3 : 1);
+    // a chilled orb cannot go as fast; a ricochet charge lets one go faster
+    const cap = b.maxSpeed * (b.transform>0 ? 1.3 : 1)
+              * (b.chill > 0 ? CHILL_MUL : 1)
+              * (1 + MOM_SPD*(b.momentum || 0));
     if (b.boost <= 0 && sp > cap){ b.vx = b.vx/sp*cap; b.vy = b.vy/sp*cap; }
     b.x += b.vx*dt; b.y += b.vy*dt;
 
@@ -1480,6 +1794,11 @@ function physics(dt){
     b.hitFlash = Math.max(0, b.hitFlash - dt);
     b.spawnGrace = Math.max(0, b.spawnGrace - dt);
     b.boost = Math.max(0, b.boost - dt);
+    if (b.chill > 0) b.chill = Math.max(0, b.chill - dt);
+    if (b.momTimer > 0){
+      b.momTimer -= dt;
+      if (b.momTimer <= 0) b.momentum = 0;    // stop bouncing and the charge lapses
+    }
     if (b.transform > 0){
       b.transform = Math.max(0, b.transform - dt);
       if (b.transform === 0) SFX.transformEnd(b.x);   // the berserker form wearing off
@@ -1515,6 +1834,10 @@ function physics(dt){
 
   // laser fences strung between wall nodes
   updateFences(dt);
+
+  // gravity wells and chain-arc visual lifetimes
+  updateWells(dt);
+  updateArcs(dt);
 
   // mines
   for (let i=mines.length-1;i>=0;i--){
@@ -1613,8 +1936,8 @@ function collideBalls(a, b){
 
   const mulA = a.transform > 0 ? 2.5 : 1;
   const mulB = b.transform > 0 ? 2.5 : 1;
-  const dmgA = a.contact * mulA * power;
-  const dmgB = b.contact * mulB * power;
+  const dmgA = contactOf(a) * mulA * power;
+  const dmgB = contactOf(b) * mulB * power;
 
   if (dmgA > 0.5) damage(b, dmgA, a);
   if (dmgB > 0.5) damage(a, dmgB, b);
@@ -1674,6 +1997,7 @@ function render(){
 
   drawArena();
   for (const m of mines) drawMine(m);
+  for (const w of wells) drawWell(w);
 
   ctx.globalCompositeOperation = 'lighter';
   for (const b of balls){
@@ -1734,6 +2058,31 @@ function render(){
     ctx.globalAlpha = fade;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath(); ctx.arc(n.x, n.y, 2.2, 0, TAU); ctx.fill();
+  }
+
+  // chain arcs: jagged lightning between each link of the chain
+  for (const ar of arcs){
+    ctx.globalAlpha = 1 - ar.t/ar.life;
+    ctx.shadowColor = ar.c; ctx.shadowBlur = 18;
+    for (let i = 0; i < ar.segs.length; i++){
+      const s = ar.segs[i];
+      const pts = [{ x:s.x1, y:s.y1 }];
+      const steps = 5;
+      for (let k = 1; k < steps; k++){
+        const tt = k/steps;
+        pts.push({
+          x: s.x1 + (s.x2-s.x1)*tt + Math.sin(ar.seed + i*3.1 + k*2.3 + elapsed*46)*10,
+          y: s.y1 + (s.y2-s.y1)*tt + Math.cos(ar.seed + i*2.7 + k*3.7 + elapsed*46)*10
+        });
+      }
+      pts.push({ x:s.x2, y:s.y2 });
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let k=1;k<pts.length;k++) ctx.lineTo(pts[k].x, pts[k].y);
+      ctx.strokeStyle = ar.c; ctx.lineWidth = 3.6; ctx.stroke();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.4; ctx.shadowBlur = 0; ctx.stroke();
+      ctx.shadowBlur = 18;
+    }
   }
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
@@ -1897,6 +2246,41 @@ function drawMine(m){
   ctx.restore();
 }
 
+function drawWell(w){
+  const fade = 1 - w.t/w.life;
+  const pulse = 0.5 + 0.5*Math.sin(w.t*9);
+  ctx.save();
+  ctx.translate(w.x, w.y);
+  ctx.globalCompositeOperation = 'lighter';
+
+  const g = ctx.createRadialGradient(0,0,4, 0,0,w.r);
+  g.addColorStop(0,    'rgba(255,255,255,.30)');
+  g.addColorStop(0.35, 'rgba(130,150,255,.13)');
+  g.addColorStop(1,    'rgba(0,0,0,0)');
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0,0,w.r,0,TAU); ctx.fill();
+
+  // inward streaks, so the direction of the pull is unmistakable
+  ctx.globalAlpha = fade*0.75;
+  ctx.strokeStyle = w.c; ctx.lineWidth = 1.6;
+  for (let i=0;i<14;i++){
+    const a = i/14*TAU + w.t*1.6;
+    const r0 = w.r*(0.4 + 0.58*((w.t*1.1 + i*0.13) % 1));
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*r0, Math.sin(a)*r0);
+    ctx.lineTo(Math.cos(a)*(r0-26), Math.sin(a)*(r0-26));
+    ctx.stroke();
+  }
+
+  // the core
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = w.c; ctx.shadowBlur = 26;
+  ctx.beginPath(); ctx.arc(0,0, 5 + pulse*3.5, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
 function drawBall(b){
   const R = b.radius;
   const t = b.t;
@@ -1969,6 +2353,44 @@ function drawBall(b){
     ctx.moveTo(Math.cos(b.angle)*(R+4), Math.sin(b.angle)*(R+4));
     ctx.arc(Math.cos(b.angle)*(R+4), Math.sin(b.angle)*(R+4), 3.4, 0, TAU);
     ctx.fill();
+  }
+
+  /* --- status overlays --- */
+  if (b.chill > 0){
+    // a rime of frost that tightens as the chill deepens
+    ctx.globalAlpha = 0.3 + 0.3*Math.min(1, b.chill/2.4);
+    ctx.strokeStyle = '#bae6fd'; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.arc(0,0,R+3, 0, TAU); ctx.stroke();
+    ctx.globalAlpha *= 0.45;
+    ctx.fillStyle = '#e0f2fe';
+    ctx.beginPath(); ctx.arc(0,0,R*0.98, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  if (b.momentum > 0){
+    // one pip per banked ricochet charge
+    const rr = R + 13;
+    for (let i=0;i<MOM_MAX;i++){
+      const a = -Math.PI/2 + i/MOM_MAX*TAU;
+      const on = i < b.momentum;
+      ctx.globalAlpha = on ? 0.95 : 0.16;
+      ctx.fillStyle = on ? '#ffffff' : b.t.c;
+      ctx.beginPath(); ctx.arc(Math.cos(a)*rr, Math.sin(a)*rr, on ? 2.8 : 2.1, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if (t.admin){
+    // the admin orb gets a slow prismatic halo, so it is unmistakable
+    ctx.globalAlpha = 0.45 + 0.25*Math.sin(elapsed*2.6);
+    ctx.lineWidth = 3.2;
+    for (let i=0;i<3;i++){
+      ctx.strokeStyle = 'hsl(' + ((elapsed*70 + i*120) % 360).toFixed(0) + ',100%,66%)';
+      ctx.beginPath();
+      ctx.arc(0, 0, R + 13 + i*7 + Math.sin(elapsed*3 + i)*2.5, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 
   const p = clamp(b.hp/b.maxHp, 0, 1);
@@ -2047,7 +2469,7 @@ function toast(msg, color, dur){
 }
 
 /* ---------------------- flow ---------------------- */
-const SCREENS = ['menu','loadoutScreen','clearScreen','overScreen','pauseScreen'];
+const SCREENS = ['menu','loadoutScreen','clearScreen','overScreen','pauseScreen','adminScreen'];
 function showScreen(id){
   SCREENS.forEach(s => el(s).classList.toggle('hidden', s !== id));
   el('hud').classList.toggle('hidden', !!id);
@@ -2287,10 +2709,11 @@ function renderMenuStats(){
 function buildMenu(){
   const grid = el('typeGrid');
   grid.innerHTML = '';
-  TYPE_KEYS.forEach(k => {
+  // the admin orb stays hidden until the password has been entered
+  ALL_TYPE_KEYS.filter(k => !TYPES[k].admin || save.admin).forEach(k => {
     const t = TYPES[k];
     const d = document.createElement('div');
-    d.className = 'opt' + (k === selectedType ? ' sel' : '');
+    d.className = 'opt' + (k === selectedType ? ' sel' : '') + (t.admin ? ' admin' : '');
     d.style.setProperty('--c', t.c);
     d.style.setProperty('--c2', t.c2);
     d.innerHTML =
@@ -2324,6 +2747,43 @@ el('btnLoadoutBack').addEventListener('click', closeLoadout);
 el('btnResume').addEventListener('click', ()=>{ SFX.ui(); togglePause(); });
 el('btnQuit').addEventListener('click', ()=>{ SFX.ui(); state='menu'; showScreen('menu'); renderMenuStats(); });
 el('btnPause').addEventListener('click', ()=>{ if (state==='playing'||state==='paused') togglePause(); });
+
+/* ---------- admin unlock ---------- */
+function adminMsg(text, color){
+  el('adminMsg').textContent = text;
+  el('adminMsg').style.color = color || '';
+}
+function openAdmin(){
+  el('adminPw').value = '';
+  el('btnAdmin').classList.toggle('on', !!save.admin);
+  el('adminSub').textContent = save.admin ? 'Unlocked' : 'Restricted orb';
+  adminMsg(save.admin ? 'Already unlocked — OMEGA is in the roster.' : '', save.admin ? '#4ade80' : '');
+  showScreen('adminScreen');
+  setTimeout(()=>{ try{ el('adminPw').focus(); }catch(e){} }, 30);
+}
+function tryAdminUnlock(){
+  if ((el('adminPw').value || '') === ADMIN_PASSWORD){
+    save.admin = true; persist();
+    el('btnAdmin').classList.add('on');
+    adminMsg('Unlocked — OMEGA added to the roster.', '#4ade80');
+    SFX.ui();
+    toast('ADMIN UNLOCKED', '#ff2fd0', 1.6);
+    buildMenu();
+    setTimeout(()=>{ showScreen('menu'); renderMenuStats(); }, 950);
+  } else {
+    adminMsg('Wrong password.', '#ff5470');
+    SFX.error();
+    el('adminPw').value = '';
+    el('adminPw').focus();
+  }
+}
+el('btnAdmin').addEventListener('click', ()=>{ SFX.ui(); openAdmin(); });
+el('btnAdminGo').addEventListener('click', tryAdminUnlock);
+el('btnAdminBack').addEventListener('click', ()=>{ SFX.ui(); adminMsg(''); showScreen('menu'); renderMenuStats(); });
+el('adminPw').addEventListener('keydown', e => {
+  e.stopPropagation();                        // typing must not trigger game keys
+  if (e.key === 'Enter') tryAdminUnlock();
+});
 el('btnMute').addEventListener('click', ()=> setMuted(!muted));
 
 /* ---------------------- main loop ---------------------- */
@@ -2396,6 +2856,7 @@ function frame(now){
 resize();
 loadSave();
 selectedType = save.orb;
+el('btnAdmin').classList.toggle('on', !!save.admin);
 muted = !!save.muted;
 if (muted) el('btnMute').style.color = '#ff5470';
 buildMenu();

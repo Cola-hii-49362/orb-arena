@@ -50,7 +50,7 @@ exactly equal footing.
 
 ---
 
-## The six orbs
+## The ten orbs
 
 | Orb | Ability | Trigger | Identity |
 | --- | --- | --- | --- |
@@ -60,8 +60,12 @@ exactly equal footing.
 | **TRAPPER** | SPIKE | **wall** | Every wall you hit gets a spike. Anything near it detonates. |
 | **TRANSMUTER** | TRANSFORM | near | 2.5× contact damage, +30% speed, +18% size, 30% damage resistance. |
 | **PHANTOM** | PHASE DASH | near | Lightest orb. Takes a kick harder and flies further than anything. |
+| **FROST** | FREEZE | near | Chills everything nearby — a chilled orb keeps 45% of its top speed. |
+| **MAGNET** | GRAVITY WELL | near | Tears open a point that drags enemies in and crushes them while they are held. |
+| **TESLA** | CHAIN ARC | near | Leaps from enemy to enemy, up to four, losing power with every jump. |
+| **RICOCHET** | MOMENTUM | **wall** | Every bounce banks a charge: more damage, more speed, less damage taken. |
 
-### The two wall archetypes
+### The three wall archetypes
 
 **LASER** plants a node into the wall on every bounce. Nodes pair off in the order they
 were planted, and each pair strings a live beam between them. Two touches, one fence.
@@ -71,8 +75,36 @@ do the killing.
 **TRAPPER** drives a spike into the wall on every bounce, up to 7 at a time. Bounce
 around the rim and the whole edge of the arena becomes a minefield.
 
-Both are area-control characters: they are weaker in a straight brawl and much stronger
+**RICOCHET** banks a charge on every bounce instead of leaving something behind: +14%
+contact damage, +7% top speed and −5% damage taken per stack, up to eight. Let the
+charge lapse for four seconds and you lose the lot. It is the most fragile orb in the
+game when it is caught standing still and one of the toughest once it is rolling — so
+it rewards a player who never stops moving.
+
+These are area-control characters: they are weaker in a straight brawl and much stronger
 if you use the box instead of fighting in the middle of it.
+
+### The four "second wave" orbs
+
+The three control orbs and RICOCHET were added as a second wave, tuned against the
+original six so that no archetype is strictly better than another. **FROST** and
+**MAGNET** are force-multipliers — they do not kill much themselves, but they make
+everything else easy to hit. **TESLA** is a crowd weapon that wants the enemy bunched
+up, which makes it a natural partner for a gravity well. **RICOCHET** is a pure
+momentum character with the highest ceiling and the lowest floor.
+
+---
+
+## The secret orb
+
+There is an eleventh orb that does not appear in the roster. It is unlocked by entering
+a password on the admin screen — the lock button in the top-right of the main menu.
+
+It is deliberately, unfairly strong: roughly six times the health of a normal orb and an
+ability that chills, hauls in and damages every enemy on screen at once. It is a toy,
+not a balance point.
+
+The password is not published here — it is a secret, and this is a public repository.
 
 ---
 
@@ -106,6 +138,12 @@ Progress, coins and inventory persist in `localStorage`.
 - **Kick as impulse**, not thrust — a kick is a velocity change, so light orbs fly
   further than heavy ones. A speed floor guarantees the box never settles into a
   stalemate.
+- **Status effects** are first-class: chill (a speed debuff), gravity wells (pull plus
+  crush damage on a tick), chain arcs (segmented lightning that hops between targets)
+  and momentum stacks (a stacking self-buff).
+- **Contact damage is symmetric** — the same figure is what an orb deals *and* what it
+  takes. That makes any "hit harder" buff a self-debuff, so stacking buffs like
+  RICOCHET's momentum carry an explicit damage-resistance term to keep them one-way.
 - **Hard cap of 30 simultaneous orbs**, enforced in three separate places.
 - **All audio is synthesised at runtime** from `OscillatorNode`, `AudioBufferSourceNode`
   and `BiquadFilterNode`. Zero audio files. A master compressor, per-sound cooldowns and
