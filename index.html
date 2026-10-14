@@ -457,6 +457,9 @@ const AUTO = {
   magnet:     { on:'near', range:345 },   // open a well while they are still far
   tesla:      { on:'near', range:330 },   // arc across a crowd
   ricochet:   { on:'wall'             },   // every bounce banks a charge
+  conductor:  { on:'wall'             },   // every bounce lays a rail section
+  cyborg:     { on:'near', range:340 },   // cycle: spin / lightning / crawl
+  venator:    { on:'near', range:460 },   // launch the next fighter of the squadron
   omega:      { on:'near', range:430 },   // admin: collapse anything in sight
 };
 
@@ -484,6 +487,43 @@ const FENCE_DMG  = 28;                 // damage per fence tick (112 dps while y
 const FENCE_TICK = 0.25;               // seconds between fence ticks
 const WALL_FIRE  = 95;                 // a bounce slower than this is a graze, not a trigger
 const MAX_SPIKES = 7;                  // wall spikes one trapper can keep planted
+
+/* ---- cyborg general (admin) ---- */
+const SABER_COUNT   = 4;               // blades orbiting the hull
+const SABER_LEN     = 78;              // blade length beyond the hull edge
+const SABER_DPS     = 34;              // contact damage per second a blade deals
+const SABER_TICK    = 0.22;            // per-orb throttle for blade damage
+const SPIN_OUT_TIME = 4.0;             // seconds the blades stay extended after SPIN
+const SPIN_DMG      = 95;              // point-blank shred when SPIN fires
+const SPIN_RADIUS   = 0.8;             // fraction of blade reach SPIN hits at
+const BOLT_DMG      = 150;             // FORCE LIGHTNING, the big one
+const BOLT_RADIUS   = 330;             // its reach
+const BOLT_ARCS     = 26;              // visual arcs crawling through the area
+const CRAWL_TIME    = 1.6;             // seconds of i-frames
+const CRAWL_BOOST   = 2.6;             // contact multiplier while crawling
+
+/* ---- venator (admin) ---- */
+const FIGHTER_CAP   = 15;              // squadron size
+const FIGHTER_LIFE  = 14;              // seconds a fighter stays on station
+const FIGHTER_R     = 13;              // hull radius for hits and drawing
+const FIGHTER_SPEED = 430;             // pursuit speed
+const LAAT_DMG      = 110;             // LAAT gunship: beam cannon + rockets
+const LAAT_CD       = 2.4;             // it hits like a building, but rarely
+const ARC_DMG       = 34;              // ARC-170 heavy cannons
+const ARC_CD        = 0.55;
+const JSTAR_DMG     = 22;              // Delta-7 laser cannons
+const JSTAR_CD      = 0.35;
+const JINT_DMG      = 14;              // Eta-2 twin rapid lasers
+const JINT_CD       = 0.22;
+const FIGHTER_RANGE = 260;             // how far a fighter will open fire from
+const BOLT_CAP      = 100000;          // hard ceiling on starfighter damage, per the brief
+
+/* ---- conductor ---- */
+const RAIL_LIFE  = 14;                 // seconds a rail section survives
+const RAIL_MAX   = 10;                 // sections one conductor can keep down
+const TRAIN_DMG  = 30;                 // damage to anything the train flattens
+const TRAIN_TICK = 0.28;               // per-orb throttle as the train rolls over it
+const TRAIN_INTERVAL = 3.2;            // seconds between departures once track exists
 
 /* Enemies share the archetype table with you, so without these the two sides
    are perfectly symmetric and every balance change cuts both ways. Scaling the
@@ -576,8 +616,34 @@ const TYPES = {
     desc:'Every wall you hit banks a charge: +14% contact damage, +7% top speed and −5% damage taken per bounce, up to eight. Stop bouncing for four seconds and you lose the lot. Fragile when it is caught flat-footed, brutal once it is rolling.',
     stats:['MASS 1.6','STACK x8','KICK 400']
   },
+  conductor: {
+    key:'conductor', name:'CONDUCTOR', tag:'Railroad',
+    c:'#fbbf24', c2:'#fef3c7',
+    r:24, mass:2.2, hp:205, kick:350, maxSpeed:555,
+    contact:12, ability:'RAILS', cd:1.1,
+    desc:'Every wall you hit lays a section of track. Connect enough sections and a train runs the whole line on its own, flattening anything standing on it. Bounce around the rim and the arena becomes a railway.',
+    stats:['MASS 2.2','TRAIN 30/hit','KICK 350']
+  },
 
   /* ---- secret: only reachable through the admin password ---- */
+  cyborg: {
+    key:'cyborg', name:'CYBORG GENERAL', tag:'Admin',
+    c:'#b7f542', c2:'#ecfccb',
+    r:32, mass:5.5, hp:900, kick:540, maxSpeed:860,
+    contact:40, ability:'SABER CYCLE', cd:3.2,
+    admin:true,
+    desc:'Admin orb. Four lightsabers spin around it whether it likes it or not, and its skill cycles every use: SABER SPIN shreds everything close and leaves the blades out for four seconds, FORCE LIGHTNING floods a huge area with crawling arcs, and CRAWL drops it low and untouchable while its frame hits far harder.',
+    stats:['MASS 5.5','DMG 40','KICK 540']
+  },
+  venator: {
+    key:'venator', name:'VENATOR', tag:'Admin',
+    c:'#f87171', c2:'#fee2e2',
+    r:32, mass:5.0, hp:880, kick:520, maxSpeed:840,
+    contact:30, ability:'LAUNCH FIGHTER', cd:2.2,
+    admin:true,
+    desc:'Admin orb. A flying hangar: every use launches a Republic ship at random — an LAAT gunship with its beam cannon, an ARC-170 on heavy cannons, a Jedi Starfighter, or a Jedi Interceptor on twin rapid lasers. Up to fifteen of them hunt on their own and hit with the weapons they were built with.',
+    stats:['MASS 5.0','FLEET x15','KICK 520']
+  },
   omega: {
     key:'omega', name:'OMEGA', tag:'Admin',
     c:'#ff2fd0', c2:'#ffffff',
@@ -1055,6 +1121,88 @@ const SFX = {
     playNoise({ dur:0.45, gain:0.08, f0:8000, f1:2200, q:2.4, type:'bandpass', pan:p });
   },
 
+  /* ---------- CYBORG GENERAL (admin) ---------- */
+  saberSpin(x){                    // the blades snap out and go supersonic
+    if (!canPlay('saberSpin', 0.3, 26)) return;
+    const p = panOf(x);
+    playNoise({ dur:0.55, gain:0.10, f0:900, f1:5200, q:3.2, type:'bandpass', pan:p, shape:'swell' });
+    playTone({ f0:180, f1:640, dur:0.5, type:'sawtooth', gain:0.045, pan:p, attack:0.02 });
+    // the hum: two close detuned squares, the lightsaber sound
+    playTone({ f0:96, f1:104, dur:0.9, type:'square', gain:0.05, pan:p, attack:0.03 });
+    playTone({ f0:101, f1:96, dur:0.9, type:'square', gain:0.05, pan:p, attack:0.03 });
+  },
+  saberHit(x){                     // blade meets hull
+    if (!canPlay('saberHit', 0.06, 22)) return;
+    const p = panOf(x);
+    playNoise({ dur:0.06, gain:0.04, f0:4200, f1:900, q:2.4, type:'bandpass', pan:p });
+    playTone({ f0:1500, f1:300, dur:0.07, type:'square', gain:0.02, pan:p, attack:0.001 });
+  },
+  forceLightning(x){               // admin. The sky opens.
+    if (!canPlay('forceLightning', 0.4, 30)) return;
+    const p = panOf(x);
+    playNoise({ dur:0.8, gain:0.13, f0:5200, f1:700, q:1.8, type:'bandpass', pan:p, power:1.4 });
+    playTone({ f0:2400, f1:180, dur:0.65, type:'sawtooth', gain:0.06, pan:p, attack:0.001 });
+    playTone({ f0:70, f1:28, dur:0.9, type:'sine', gain:0.10, pan:p, attack:0.01 });
+    for (let i=0;i<4;i++){
+      playNoise({ dur:0.05, gain:0.05, f0:6000-i*600, f1:1500, q:2.8, type:'bandpass', pan:p, delay:i*0.07 });
+    }
+  },
+  crawl(x){                        // drop low, servos whine, then pounce
+    if (!canPlay('crawl', 0.3, 26)) return;
+    const p = panOf(x);
+    playTone({ f0:420, f1:70, dur:0.4, type:'sawtooth', gain:0.055, pan:p, attack:0.01 });
+    playNoise({ dur:0.35, gain:0.05, f0:1800, f1:400, q:1.4, pan:p });
+  },
+  crawlHit(x){                     // the pounce connecting
+    if (!canPlay('crawlHit', 0.1, 24)) return;
+    const p = panOf(x);
+    playTone({ f0:220, f1:40, dur:0.3, type:'square', gain:0.08, pan:p });
+    playNoise({ dur:0.2, gain:0.08, f0:2600, f1:300, q:1.1, pan:p });
+  },
+
+  /* ---------- VENATOR (admin) ---------- */
+  launch(x){                       // a fighter clears the hangar deck
+    if (!canPlay('launch', 0.15, 24)) return;
+    const p = panOf(x);
+    playNoise({ dur:0.4, gain:0.07, f0:600, f1:3400, q:1.6, type:'bandpass', pan:p, shape:'swell' });
+    playTone({ f0:340, f1:900, dur:0.35, type:'triangle', gain:0.04, pan:p, attack:0.02 });
+  },
+  fighterShot(x, kind){            // a different voice per ship class
+    if (!canPlay('fshot', 0.05, 26)) return;
+    const p = panOf(x);
+    if (kind === 'LAAT gunship'){
+      // beam cannon plus a rocket thump
+      playTone({ f0:120, f1:40, dur:0.45, type:'sine', gain:0.10, pan:p });
+      playNoise({ dur:0.35, gain:0.08, f0:800, f1:120, q:1.0, pan:p });
+    } else if (kind === 'Jedi Interceptor'){
+      playTone({ f0:1700 + rnd(-140,140), f1:640, dur:0.05, type:'square', gain:0.018, pan:p, attack:0.001 });
+    } else if (kind === 'Jedi Starfighter'){
+      playTone({ f0:1250 + rnd(-110,110), f1:480, dur:0.07, type:'square', gain:0.024, pan:p, attack:0.001 });
+    } else {
+      playTone({ f0:900 + rnd(-80,80), f1:300, dur:0.09, type:'sawtooth', gain:0.03, pan:p, attack:0.001 });
+    }
+  },
+
+  /* ---------- CONDUCTOR ---------- */
+  rail(x){                         // a section of track clamps down
+    if (!canPlay('rail', 0.08, 20)) return;
+    const p = panOf(x);
+    playTone({ f0:620, f1:240, dur:0.09, type:'square', gain:0.03, pan:p });
+    playNoise({ dur:0.06, gain:0.03, f0:2400, f1:700, q:1.6, pan:p });
+  },
+  train(x, y){                     // the departure whistle
+    if (!canPlay('train', 0.6, 8)) return;
+    const p = panOf(x);
+    playTone({ f0:520, f1:390, dur:0.5, type:'triangle', gain:0.05, pan:p, attack:0.04 });
+    playTone({ f0:660, f1:495, dur:0.45, type:'triangle', gain:0.03, pan:p, attack:0.05, delay:0.05 });
+  },
+  trainHit(x){                     // something got flattened
+    if (!canPlay('trainHit', 0.08, 22)) return;
+    const p = panOf(x);
+    playTone({ f0:130, f1:36, dur:0.22, type:'sine', gain:0.075, pan:p, attack:0.003 });
+    playNoise({ dur:0.12, gain:0.05, f0:1200, f1:200, q:0.9, pan:p });
+  },
+
   /* ---------- deaths ---------- */
   kill(x){                         // an enemy orb pops
     if (!canPlay('kill', 0.04, 18)) return;
@@ -1127,7 +1275,7 @@ const SFX = {
 
 /* ---------------------- game state ---------------------- */
 let state = 'menu';
-let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [], wells = [], arcs = [];
+let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [], wells = [], arcs = [], rails = [], trains = [], fighters = [], bolts = [];
 let player = null;
 let selectedType = 'bruiser';
 let round = 1, score = 0, kills = 0, killsThisRound = 0, nextId = 1;
@@ -1176,6 +1324,9 @@ class Ball {
     this.chill = 0;          // seconds of speed debuff remaining
     this.momentum = 0;       // ricochet charge stacks
     this.momTimer = 0;       // how long the charge survives without a bounce
+    this.skill = 0;          // cyborg general: which of the three skills fires next
+    this.spin = 0;           // seconds left on the extended-blades buff
+    this.crawl = 0;          // seconds of i-frames left
     this.mods = { regen:0, plating:1, vampire:0, shield:0 };
 
     this.angle = rnd(0, TAU);
@@ -1243,7 +1394,7 @@ function spawnChildren(parent){
 }
 
 function startRound(n){
-  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = []; wells = []; arcs = [];
+  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = []; wells = []; arcs = []; rails = []; trains = []; fighters = []; bolts = [];
   nextId = 1;
   hitStop = 0; shake = 0; elapsed = 0;
   introTimer = 2.4;
@@ -1352,6 +1503,17 @@ function kill(b, source){
   if (b.typeKey === 'splitter' && b.gen < 3 && b.r >= 12 && balls.length < MAX_BALLS){
     spawnChildren(b);
   }
+  // a dying venator recalls its whole squadron, and its hangar with it
+  if (b.typeKey === 'venator'){
+    fighters = fighters.filter(f => f.owner !== b.id ? true : (f.alive = false, false));
+    bolts = bolts.filter(bo => bo.owner !== b.id);
+    rails = rails.filter(r => r.owner !== b.id);
+  }
+  // a dying conductor's track and trains go with it
+  if (b.typeKey === 'conductor'){
+    rails = rails.filter(r => r.owner !== b.id);
+    trains = trains.filter(t => t.owner !== b.id);
+  }
   if (b.side === 1){
     score += 100 + round*25;
     kills++; killsThisRound++;
@@ -1380,6 +1542,9 @@ function useAbility(b){
     case 'magnet':     abilityWell(b);      break;
     case 'tesla':      abilityArc(b);       break;
     case 'ricochet':   abilityMomentum(b);  break;
+    case 'conductor':  abilityRails(b);     break;
+    case 'cyborg':     abilitySaberCycle(b); break;
+    case 'venator':    abilityLaunch(b);    break;
     case 'omega':      abilitySingularity(b); break;
   }
   if (b.isPlayer) updateAbilityUi();
@@ -1683,6 +1848,280 @@ function abilityMomentum(b){
   if (b.momentum >= MOM_MAX) floatText(b.x, b.y - b.radius - 20, 'MAX CHARGE', b.t.c, 13);
 }
 
+/* --- CONDUCTOR: every wall bounce lays a rail section ---
+   Sections connect end to end in the order they were laid. Once two exist, a
+   train departs on its own every few seconds and rolls the whole live line,
+   flattening anything hostile standing on it. */
+function abilityRails(b){
+  if (b.anchor == null) return;
+  const mine = rails.filter(r => r.owner === b.id);
+  if (mine.length >= RAIL_MAX && rails[0]){
+    // recycle the oldest of mine so the line never silently dies out
+    const idx = rails.indexOf(mine[0]);
+    if (idx >= 0) rails.splice(idx, 1);
+  }
+  // a section starts at the wall contact point and reaches inward along the
+  // bounce normal, so the line hugs the rim where the conductor actually rides
+  const a = Math.atan2(b.y - b.anchor.y, b.x - b.anchor.x);
+  const x1 = b.anchor.x, y1 = b.anchor.y;
+  const x2 = x1 + Math.cos(a)*54, y2 = y1 + Math.sin(a)*54;
+  rails.push({ owner:b.id, side:b.side, x1, y1, x2, y2, life:RAIL_LIFE, t:0, c:b.t.c, born:0 });
+  burst(x1, y1, b.t.c, 6, 150, 2);
+  SFX.rail(b.x);
+  floatText(b.x, b.y - b.radius - 18, 'RAIL x' + Math.min(mine.length + 1, RAIL_MAX), b.t.c, 12);
+}
+
+/* the train: departs from the first live section, runs the whole line once */
+function departTrain(line){
+  const segs = rails.filter(r => r.owner === line.owner);
+  if (segs.length < 2) return;
+  const cars = [];
+  for (let i = 0; i < 3; i++){
+    cars.push({ seg:0, u:-i*0.22 });
+  }
+  trains.push({ owner:line.owner, side:line.side, cars, prog:0, speed:0.62, hit:new Map(), c:line.c, done:false });
+  SFX.train(rails.length ? rails[0].x1 : b.x, rails.length ? rails[0].y1 : b.y);
+}
+
+function updateTrains(dt){
+  for (let i = trains.length-1; i >= 0; i--){
+    const tr = trains[i];
+    const segs = rails.filter(r => r.owner === tr.owner && r.life > 0);
+    const total = segs.length;
+    if (total < 2){ trains.splice(i,1); continue; }
+    tr.prog += tr.speed * dt;
+    // the train flattens anything hostile sitting on the section it is crossing
+    for (const o of balls){
+      if (!o.alive || o.side === tr.side) continue;
+      for (const s of segs){
+        if (distToSeg(o.x, o.y, s) < o.radius + 14){
+          const last = tr.hit.get(o.id) || -1;
+          if (elapsed - last >= TRAIN_TICK){
+            tr.hit.set(o.id, elapsed);
+            const owner = balls.find(x => x.id === tr.owner);
+            damage(o, TRAIN_DMG * (owner ? owner.abilityMul : 1), owner || null);
+            const a = Math.atan2(o.y - s.y1, o.x - s.x1);
+            o.vx += Math.cos(a)*120; o.vy += Math.sin(a)*120; o.boost = 0.3;
+            burst(o.x, o.y, '#fbbf24', 6, 180, 2);
+            SFX.trainHit(o.x);
+          }
+          break;
+        }
+      }
+    }
+    if (tr.prog > total + 1){ trains.splice(i,1); }
+  }
+}
+
+/* shortest distance from a point to a rail section */
+function distToSeg(px, py, s){
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+  const len2 = dx*dx + dy*dy || 1;
+  let u = ((px - s.x1)*dx + (py - s.y1)*dy) / len2;
+  u = clamp(u, 0, 1);
+  return Math.hypot(px - (s.x1 + dx*u), py - (s.y1 + dy*u));
+}
+
+function updateRails(dt){
+  for (let i = rails.length-1; i >= 0; i--){
+    const r = rails[i];
+    r.life -= dt; r.t += dt;
+    r.born = Math.min(1, r.born + dt*3);
+    if (r.life <= 0) rails.splice(i,1);
+  }
+  // a departure is scheduled per owner: whenever enough live track exists and
+  // the previous run has finished, the next train leaves on its own
+  trainTimer -= dt;
+  if (trainTimer <= 0){
+    trainTimer = TRAIN_INTERVAL;
+    // find one owner (the conductor) with enough live track
+    for (const r of rails){
+      const mine = rails.filter(x => x.owner === r.owner && x.life > 0);
+      const busy = trains.some(t => t.owner === r.owner);
+      if (mine.length >= 2 && !busy){ departTrain(r); break; }
+    }
+  }
+}
+let trainTimer = TRAIN_INTERVAL;   // starts counting down once track exists
+
+/* --- CYBORG GENERAL: one cooldown, three skills, cycling in order ---
+   SPIN -> LIGHTNING -> CRAWL -> SPIN -> ... */
+function abilitySaberCycle(b){
+  const skill = b.skill % 3;
+  b.skill++;
+  if (skill === 0){
+    // SABER SPIN: point-blank shred, then four seconds of extended blades
+    const R = (b.radius + SABER_LEN) * SPIN_RADIUS + 40;
+    for (const o of balls){
+      if (!o.alive || o.side === b.side) continue;
+      const d = Math.hypot(o.x-b.x, o.y-b.y);
+      if (d < R + o.radius){
+        const f = clamp(1 - d/(R + o.radius), 0, 1);
+        damage(o, (55 + 60*f) * b.abilityMul, b);
+        const a = Math.atan2(o.y-b.y, o.x-b.x);
+        o.vx += Math.cos(a)*(260 + 300*f); o.vy += Math.sin(a)*(260 + 300*f);
+        o.boost = 0.5;
+      }
+    }
+    b.spin = SPIN_OUT_TIME;
+    rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:R, life:.45, t:0, c:'#7CFC00', w:6 });
+    rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:R*0.6, life:.3, t:0, c:'#ffffff', w:2 });
+    burst(b.x, b.y, '#7CFC00', 30, 480, 3.4);
+    addShake(10); SFX.saberSpin(b.x);
+    floatText(b.x, b.y - b.radius - 24, 'SABER SPIN', '#7CFC00', 15);
+  } else if (skill === 1){
+    // FORCE LIGHTNING: huge AOE of crawling arcs, heavy damage + a chill
+    for (const o of balls){
+      if (!o.alive || o.side === b.side) continue;
+      const d = Math.hypot(o.x-b.x, o.y-b.y);
+      if (d < BOLT_RADIUS + o.radius){
+        const f = clamp(1 - d/(BOLT_RADIUS + o.radius), 0, 1);
+        damage(o, (70 + 80*f) * b.abilityMul, b);
+        o.chill = Math.max(o.chill, 1.6 + 1.2*f);
+        o.hitFlash = Math.max(o.hitFlash, 0.25);
+      }
+    }
+    for (let i = 0; i < BOLT_ARCS; i++){
+      const a = rnd(0, TAU);
+      const rr = Math.sqrt(Math.random()) * BOLT_RADIUS;
+      const tx = b.x + Math.cos(a)*rr, ty = b.y + Math.sin(a)*rr;
+      arcs.push({ segs:[{ x1:b.x, y1:b.y, x2:tx, y2:ty }], life:.34, t:0, c:'#cdb4ff', seed:Math.random()*100 });
+    }
+    rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:BOLT_RADIUS, life:.55, t:0, c:'#cdb4ff', w:5 });
+    burst(b.x, b.y, '#cdb4ff', 40, 640, 3.8);
+    addShake(14); SFX.forceLightning(b.x);
+    floatText(b.x, b.y - b.radius - 24, 'FORCE LIGHTNING', '#cdb4ff', 15);
+  } else {
+    // CRAWL: drop low, untouchable, and hit like a freight hauler
+    b.crawl = CRAWL_TIME;
+    b.phase = CRAWL_TIME;                 // phase = the game's i-frame window
+    b.dashHits = new Set();               // and reuse its hit bookkeeping
+    b.boost = 0.85;
+    const sp = 820;
+    b.vx += Math.cos(b.angle)*sp*0.5; b.vy += Math.sin(b.angle)*sp*0.5;
+    rings.push({ x:b.x, y:b.y, r:b.radius, max:b.radius*2.1, life:.4, t:0, c:'#b7f542', w:4 });
+    burst(b.x, b.y, '#b7f542', 20, 380, 3);
+    addShake(8); SFX.crawl(b.x);
+    floatText(b.x, b.y - b.radius - 24, 'CRAWL', '#b7f542', 15);
+  }
+}
+
+/* the four blades: damage anything hostile they touch, throttled per orb */
+function updateSabers(dt){
+  for (const b of balls){
+    if (!b.alive || b.typeKey !== 'cyborg') continue;
+    const reach = b.radius + (b.spin > 0 ? SABER_LEN : SABER_LEN*0.55);
+    for (const o of balls){
+      if (!o.alive || o.side === b.side) continue;
+      const d = Math.hypot(o.x-b.x, o.y-b.y);
+      if (d > reach + o.radius) continue;
+      const last = b.saberHit && b.saberHit.get(o.id);
+      if (last != null && elapsed - last < SABER_TICK) continue;
+      if (!b.saberHit) b.saberHit = new Map();
+      b.saberHit.set(o.id, elapsed);
+      const f = clamp(1 - d/(reach + o.radius), 0, 1);
+      damage(o, SABER_DPS * SABER_TICK * (1 + f) * (b.spin > 0 ? 1.6 : 1) * b.abilityMul, b);
+      burst(o.x, o.y, '#7CFC00', 3, 120, 1.6);
+      SFX.saberHit(o.x);
+    }
+  }
+}
+
+/* --- VENATOR: launch the next fighter of the squadron ---
+   The hangar rotates through four Republic classes, picked at random. */
+const FIGHTER_TYPES = [
+  { kind:'LAAT gunship',     dmg:LAAT_DMG, cd:LAAT_CD,  c:'#f87171', size:1.65 },
+  { kind:'ARC-170',          dmg:ARC_DMG,  cd:ARC_CD,   c:'#f87171', size:1.15 },
+  { kind:'Jedi Starfighter', dmg:JSTAR_DMG,cd:JSTAR_CD, c:'#a5f3fc', size:1.0  },
+  { kind:'Jedi Interceptor', dmg:JINT_DMG, cd:JINT_CD,  c:'#c4b5fd', size:0.9  },
+];
+function abilityLaunch(b){
+  const mine = fighters.filter(f => f.owner === b.id && f.alive);
+  if (mine.length >= FIGHTER_CAP){
+    // hangar full: the oldest fighter peels off for its final pass
+    mine[0].life = Math.min(mine[0].life, 1.2);
+    floatText(b.x, b.y - b.radius - 18, 'HANGAR FULL', '#fca5a5', 11);
+    return;
+  }
+  const spec = FIGHTER_TYPES[Math.floor(Math.random()*FIGHTER_TYPES.length)];
+  const a = rnd(0, TAU);
+  fighters.push({
+    owner:b.id, side:b.side, spec, size:spec.size,
+    x:b.x + Math.cos(a)*(b.radius+14), y:b.y + Math.sin(a)*(b.radius+14),
+    vx:Math.cos(a)*260, vy:Math.sin(a)*260,
+    angle:a, life:FIGHTER_LIFE, alive:true, shotCd:0.4, seed:Math.random()*100
+  });
+  rings.push({ x:b.x, y:b.y, r:b.radius, max:b.radius+30, life:.3, t:0, c:spec.c, w:2.5 });
+  burst(b.x, b.y, spec.c, 10, 220, 2.2);
+  SFX.launch(b.x);
+  floatText(b.x, b.y - b.radius - 22, spec.kind.toUpperCase() + ' LAUNCHED', spec.c, 12);
+}
+
+/* the squadron: pursue the nearest enemy, fire on cooldown, expire on time */
+function updateFighters(dt){
+  for (let i = fighters.length-1; i >= 0; i--){
+    const f = fighters[i];
+    if (!f.alive || f.life <= 0){ f.alive = false; fighters.splice(i,1); continue; }
+    f.life -= dt;
+    const owner = balls.find(x => x.id === f.owner);
+    const mySide = owner ? owner.side : f.side;
+    // nearest hostile orb
+    let tgt = null, bd = Infinity;
+    for (const o of balls){
+      if (!o.alive || o.side === mySide) continue;
+      const d = Math.hypot(o.x-f.x, o.y-f.y);
+      if (d < bd){ bd = d; tgt = o; }
+    }
+    if (tgt){
+      // steer toward an intercept point
+      const a = Math.atan2(tgt.y - f.y, tgt.x - f.x);
+      const turn = lerpAngle(f.angle, a, Math.min(1, dt*4.2));
+      f.angle = turn;
+      const targetVX = Math.cos(f.angle)*FIGHTER_SPEED, targetVY = Math.sin(f.angle)*FIGHTER_SPEED;
+      f.vx += (targetVX - f.vx) * Math.min(1, dt*3);
+      f.vy += (targetVY - f.vy) * Math.min(1, dt*3);
+      // fire when in range and off cooldown
+      f.shotCd -= dt;
+      if (bd < FIGHTER_RANGE + tgt.radius && f.shotCd <= 0){
+        f.shotCd = f.spec.cd;
+        const dmg = Math.min(f.spec.dmg * (owner ? owner.abilityMul : 1), BOLT_CAP);
+        bolts.push({ x:f.x + Math.cos(f.angle)*12, y:f.y + Math.sin(f.angle)*12,
+                     tx:tgt.x, ty:tgt.y, life:.22, t:0, c:f.spec.c, dmg,
+                     tgt:tgt.id, owner:f.owner });
+        SFX.fighterShot(f.x, f.spec.kind);
+      }
+    } else {
+      // no enemies: orbit the launch point lazily
+      const oa = f.seed + elapsed*0.9;
+      f.vx += (Math.cos(oa)*160 - f.vx)*dt*2;
+      f.vy += (Math.sin(oa)*160 - f.vy)*dt*2;
+      f.angle = Math.atan2(f.vy, f.vx);
+    }
+    f.x += f.vx*dt; f.y += f.vy*dt;
+    f.x = clamp(f.x, FIGHTER_R, WORLD.w - FIGHTER_R);
+    f.y = clamp(f.y, FIGHTER_R, WORLD.h - FIGHTER_R);
+    // exhaust trail
+    if (Math.random() < 0.5){
+      parts.push({ x:f.x - Math.cos(f.angle)*10, y:f.y - Math.sin(f.angle)*10,
+                   vx:rnd(-20,20), vy:rnd(-20,20), life:.25, max:.25, c:f.spec.c, s:2.2 });
+    }
+  }
+  // bolts: fly to where the target was; the hit lands on arrival
+  for (let i = bolts.length-1; i >= 0; i--){
+    const bo = bolts[i];
+    bo.t += dt;
+    if (bo.t >= bo.life){
+      // damage lands when the shot does, if the target is still there
+      const tgt = balls.find(o => o.id === bo.tgt);
+      const owner = balls.find(x => x.id === bo.owner);
+      if (tgt && tgt.alive && owner && owner.alive){
+        damage(tgt, bo.dmg, owner);
+      }
+      bolts.splice(i,1);
+    }
+  }
+}
+
 /* --- OMEGA (admin): singularity --- */
 function abilitySingularity(b){
   const R = 400;
@@ -1859,6 +2298,8 @@ function physics(dt){
     b.spawnGrace = Math.max(0, b.spawnGrace - dt);
     b.boost = Math.max(0, b.boost - dt);
     if (b.chill > 0) b.chill = Math.max(0, b.chill - dt);
+    if (b.spin > 0)  b.spin  = Math.max(0, b.spin - dt);
+    if (b.crawl > 0) b.crawl = Math.max(0, b.crawl - dt);
     if (b.momTimer > 0){
       b.momTimer -= dt;
       if (b.momTimer <= 0) b.momentum = 0;    // stop bouncing and the charge lapses
@@ -1902,6 +2343,12 @@ function physics(dt){
   // gravity wells and chain-arc visual lifetimes
   updateWells(dt);
   updateArcs(dt);
+
+  // cyborg blades, conductor track, the squadron and its bolts
+  updateSabers(dt);
+  updateRails(dt);
+  updateTrains(dt);
+  updateFighters(dt);
 
   // mines
   for (let i=mines.length-1;i>=0;i--){
@@ -1984,10 +2431,19 @@ function collideBalls(a, b){
   }
 
   if (a.phase > 0 && a.dashHits && !a.dashHits.has(b.id)){
-    a.dashHits.add(b.id); damage(b, 56 * a.abilityMul, a); addShake(5); SFX.dashHit(px);
+    a.dashHits.add(b.id);
+    // a crawling cyborg general hits like a freight train; a dashing phantom, like a knife
+    const hitDmg = a.crawl > 0 ? 120 * a.abilityMul * CRAWL_BOOST : 56 * a.abilityMul;
+    damage(b, hitDmg, a); addShake(a.crawl > 0 ? 12 : 5);
+    if (a.crawl > 0){ burst(px, py, '#b7f542', 16, 320, 3); SFX.crawlHit(px); }
+    else SFX.dashHit(px);
   }
   if (b.phase > 0 && b.dashHits && !b.dashHits.has(a.id)){
-    b.dashHits.add(a.id); damage(a, 56 * b.abilityMul, b); addShake(5); SFX.dashHit(px);
+    b.dashHits.add(a.id);
+    const hitDmg = b.crawl > 0 ? 120 * b.abilityMul * CRAWL_BOOST : 56 * b.abilityMul;
+    damage(a, hitDmg, b); addShake(b.crawl > 0 ? 12 : 5);
+    if (b.crawl > 0){ burst(px, py, '#b7f542', 16, 320, 3); SFX.crawlHit(px); }
+    else SFX.dashHit(px);
   }
 
   if (a.side === b.side) return;    // same team: physics only
@@ -2062,6 +2518,8 @@ function render(){
   drawArena();
   for (const m of mines) drawMine(m);
   for (const w of wells) drawWell(w);
+  drawRails();
+  drawTrains();
 
   ctx.globalCompositeOperation = 'lighter';
   for (const b of balls){
@@ -2086,6 +2544,9 @@ function render(){
   ctx.globalAlpha = 1;
 
   for (const b of balls) drawBall(b);
+  drawFighters();
+  drawBolts();
+  drawSabers();
 
   // laser fences: a live beam between every completed pair of wall nodes
   ctx.globalCompositeOperation = 'lighter';
@@ -2266,6 +2727,221 @@ function drawArena(){
     ctx.beginPath();
     ctx.moveTo(cx+sx*9, cy+sy*L); ctx.lineTo(cx+sx*9, cy+sy*9); ctx.lineTo(cx+sx*L, cy+sy*9);
     ctx.stroke();
+  }
+}
+
+/* ---------- CONDUCTOR: track, sleepers and the train ---------- */
+function drawRails(){
+  for (const r of rails){
+    const fade = Math.min(1, r.life/1.5) * r.born;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    // sleepers under the rails
+    const dx = r.x2-r.x1, dy = r.y2-r.y1;
+    const len = Math.hypot(dx,dy) || 1;
+    const nx = -dy/len, ny = dx/len;
+    ctx.strokeStyle = 'rgba(120,90,50,.85)';
+    ctx.lineWidth = 3.5;
+    for (let u = 0.12; u <= 0.9; u += 0.19){
+      const px = r.x1 + dx*u, py = r.y1 + dy*u;
+      ctx.beginPath();
+      ctx.moveTo(px - nx*6, py - ny*6);
+      ctx.lineTo(px + nx*6, py + ny*6);
+      ctx.stroke();
+    }
+    // the two steel rails
+    ctx.strokeStyle = '#cfd8e6';
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = r.c; ctx.shadowBlur = 6;
+    for (const side of [-1, 1]){
+      ctx.beginPath();
+      ctx.moveTo(r.x1 + nx*4.4*side, r.y1 + ny*4.4*side);
+      ctx.lineTo(r.x2 + nx*4.4*side, r.y2 + ny*4.4*side);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function drawTrains(){
+  for (const tr of trains){
+    const segs = rails.filter(r => r.owner === tr.owner && r.life > 0);
+    if (!segs.length) continue;
+    const totalLen = segs.reduce((a,s) => a + Math.hypot(s.x2-s.x1, s.y2-s.y1), 0);
+    for (let ci = 0; ci < tr.cars.length; ci++){
+      // each car sits a fixed distance back along the line from the engine
+      const target = tr.prog * totalLen - ci * 26;
+      if (target < 0) continue;
+      let acc = 0, pos = null;
+      for (const s of segs){
+        const sl = Math.hypot(s.x2-s.x1, s.y2-s.y1);
+        if (target <= acc + sl){
+          const u = (target - acc) / sl;
+          pos = { x: s.x1 + (s.x2-s.x1)*u, y: s.y1 + (s.y2-s.y1)*u, a: Math.atan2(s.y2-s.y1, s.x2-s.x1) };
+          break;
+        }
+        acc += sl;
+      }
+      if (!pos) continue;
+      const bob = Math.sin(elapsed*30 + ci*2.1) * 0.7;
+      ctx.save();
+      ctx.translate(pos.x, pos.y + bob);
+      ctx.rotate(pos.a);
+      // the body: engine first, then tenders
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = ci === 0 ? tr.c : '#8f7350';
+      ctx.strokeStyle = 'rgba(0,0,0,.5)';
+      ctx.lineWidth = 1;
+      const w = ci === 0 ? 20 : 15, h = 11;
+      ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 2.5); ctx.fill(); ctx.stroke();
+      // cab window on the engine
+      if (ci === 0){
+        ctx.fillStyle = '#ffe9a8';
+        ctx.beginPath(); ctx.arc(w/2 - 4, -1, 2.4, 0, TAU); ctx.fill();
+        // the chimney puffing
+        ctx.fillStyle = 'rgba(220,225,235,.5)';
+        ctx.beginPath(); ctx.arc(-w/2 + 3, -h/2 - 2 - Math.abs(Math.sin(elapsed*9))*3, 2.2, 0, TAU); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+/* ---------- VENATOR: the squadron and its fire ---------- */
+function drawFighters(){
+  for (const f of fighters){
+    const fade = Math.min(1, f.life/1.2);
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    ctx.rotate(f.angle);
+    ctx.scale(f.size || 1, f.size || 1);
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = '#d7dde8';
+    ctx.strokeStyle = 'rgba(0,0,0,.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (f.spec.kind === 'LAAT gunship'){
+      // a chunky twin-cockpit gunship with wing mounts
+      ctx.roundRect(-11, -5.5, 22, 11, 4);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#8b93a3';
+      ctx.beginPath(); ctx.roundRect(-14, -2.2, 5, 4.4, 1.5); ctx.fill();  // tail
+      ctx.beginPath(); ctx.roundRect(-2, -10.5, 5, 4, 1.5); ctx.fill();    // top wing
+      ctx.beginPath(); ctx.roundRect(-2, 6.5, 5, 4, 1.5); ctx.fill();      // bottom wing
+      ctx.fillStyle = f.spec.c;
+      ctx.fillRect(-8, -4.4, 3, 8.8);                                      // red stripe
+      ctx.fillStyle = '#9fd8ff';
+      ctx.beginPath(); ctx.arc(8.5, -2.6, 1.9, 0, TAU); ctx.fill();        // two cockpits
+      ctx.beginPath(); ctx.arc(8.5, 2.6, 1.9, 0, TAU); ctx.fill();
+    } else if (f.spec.kind === 'ARC-170'){
+      // a heavy fighter: long hull, wide s-foils, tail guns
+      ctx.moveTo(14, 0);
+      ctx.lineTo(-2, -9.5);
+      ctx.lineTo(-10, -4);
+      ctx.lineTo(-10, 4);
+      ctx.lineTo(-2, 9.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = f.spec.c;
+      ctx.fillRect(-7.5, -8, 3, 4);
+      ctx.fillRect(-7.5, 4, 3, 4);
+      ctx.fillStyle = '#9fd8ff';
+      ctx.beginPath(); ctx.arc(4.5, 0, 2.2, 0, TAU); ctx.fill();
+    } else if (f.spec.kind === 'Jedi Starfighter'){
+      // the Delta-7: slim arrowhead with astromech hump
+      ctx.moveTo(13, 0);
+      ctx.lineTo(-3, -5);
+      ctx.lineTo(-9, -2.5);
+      ctx.lineTo(-9, 2.5);
+      ctx.lineTo(-3, 5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#8b93a3';
+      ctx.beginPath(); ctx.arc(-1, -3.4, 2, 0, TAU); ctx.fill();           // R2 unit
+      ctx.fillStyle = f.spec.c;
+      ctx.beginPath(); ctx.arc(2, 0, 2.6, 0, TAU); ctx.fill();             // cockpit
+    } else {
+      // the Eta-2: compact interceptor, twin cannons
+      ctx.moveTo(11, 0);
+      ctx.lineTo(-4, -6.5);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-4, 6.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#8b93a3';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(-2, -4.5); ctx.lineTo(9, -4.5); ctx.stroke();  // cannon spars
+      ctx.beginPath(); ctx.moveTo(-2, 4.5); ctx.lineTo(9, 4.5); ctx.stroke();
+      ctx.fillStyle = f.spec.c;
+      ctx.beginPath(); ctx.arc(1.5, 0, 2.4, 0, TAU); ctx.fill();           // cockpit
+    }
+    ctx.restore();
+  }
+}
+
+function drawBolts(){
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for (const bo of bolts){
+    const f = 1 - bo.t/bo.life;
+    const tx = bo.tx, ty = bo.ty;
+    const sx = bo.x + (tx-bo.x)*(bo.t/bo.life);
+    const sy = bo.y + (ty-bo.y)*(bo.t/bo.life);
+    const tail = 10;
+    const dx = tx-sx, dy = ty-sy;
+    const dl = Math.hypot(dx,dy) || 1;
+    ctx.globalAlpha = f;
+    ctx.strokeStyle = bo.c; ctx.lineWidth = 3; ctx.shadowColor = bo.c; ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx - dx/dl*tail, sy - dy/dl*tail);
+    ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx - dx/dl*tail*0.6, sy - dy/dl*tail*0.6);
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+
+/* ---------- CYBORG GENERAL: the four blades ---------- */
+function drawSabers(){
+  for (const b of balls){
+    if (!b.alive || b.typeKey !== 'cyborg') continue;
+    const out = b.spin > 0;
+    const len = out ? SABER_LEN : SABER_LEN*0.55;
+    const spin = elapsed * (out ? 5.4 : 2.1);
+    for (let i = 0; i < SABER_COUNT; i++){
+      const a = spin + i/SABER_COUNT*TAU;
+      const x0 = b.x + Math.cos(a)*(b.radius + 3);
+      const y0 = b.y + Math.sin(a)*(b.radius + 3);
+      const x1 = b.x + Math.cos(a)*(b.radius + len);
+      const y1 = b.y + Math.sin(a)*(b.radius + len);
+      // the hilt
+      ctx.strokeStyle = '#8a9099';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath(); ctx.moveTo(b.x + Math.cos(a)*(b.radius - 4), b.y + Math.sin(a)*(b.radius - 4));
+      ctx.lineTo(x0, y0); ctx.stroke();
+      // the blade, bright core + coloured glow
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(124,252,0,.5)'; ctx.lineWidth = 7; ctx.shadowColor = '#7CFC00'; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.strokeStyle = '#d9ffb3'; ctx.lineWidth = 2.6; ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.shadowBlur = 0;
+    }
+    if (out){
+      // the spin blur: a faint ring at blade reach
+      ctx.globalAlpha = 0.12 + 0.06*Math.sin(elapsed*18);
+      ctx.strokeStyle = '#7CFC00';
+      ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius + len, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
@@ -2836,8 +3512,8 @@ function adminMsg(text, color){
 function openAdmin(){
   el('adminPw').value = '';
   el('btnAdmin').classList.toggle('on', !!save.admin);
-  el('adminSub').textContent = save.admin ? 'Unlocked' : 'Restricted orb';
-  adminMsg(save.admin ? 'Already unlocked — OMEGA is in the roster.' : '', save.admin ? '#4ade80' : '');
+  el('adminSub').textContent = save.admin ? 'Unlocked' : 'Restricted orbs';
+  adminMsg(save.admin ? 'Already unlocked — the admin orbs are in the roster.' : '', save.admin ? '#4ade80' : '');
   showScreen('adminScreen');
   setTimeout(()=>{ try{ el('adminPw').focus(); }catch(e){} }, 30);
 }
@@ -2845,7 +3521,7 @@ function tryAdminUnlock(){
   if ((el('adminPw').value || '') === ADMIN_PASSWORD){
     save.admin = true; persist();
     el('btnAdmin').classList.add('on');
-    adminMsg('Unlocked — OMEGA added to the roster.', '#4ade80');
+    adminMsg('Unlocked — CYBORG GENERAL, VENATOR and OMEGA added to the roster.', '#4ade80');
     SFX.ui();
     toast('ADMIN UNLOCKED', '#ff2fd0', 1.6);
     buildMenu();
