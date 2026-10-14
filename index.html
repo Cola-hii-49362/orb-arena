@@ -144,8 +144,31 @@
   .opt .st{display:flex;gap:5px;margin-top:6px;font-size:8.5px;color:var(--dim);letter-spacing:.05em;flex-wrap:wrap}
   .opt .st i{font-style:normal;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px}
 
+  .cta{
+    display:block;margin:0 auto;padding:13px 46px;border-radius:12px;border:0;cursor:pointer;
+    font-size:13.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#04060c;
+    background:linear-gradient(92deg,#4de1ff,#a78bfa);box-shadow:0 10px 40px -12px #4de1ff;transition:.16s;
+  }
+  .cta:hover{transform:translateY(-2px);box-shadow:0 16px 46px -12px #4de1ff}
+  .cta.ghost{background:transparent;color:var(--text);border:1px solid var(--line);box-shadow:none}
+  .cta.ghost:hover{background:rgba(255,255,255,.07)}
+  .cta.sm{padding:10px 26px;font-size:12px}
+  .row{display:flex;gap:11px;justify-content:center;flex-wrap:wrap}
+  .keys{margin-top:16px;text-align:center;font-size:10.5px;color:var(--dim);letter-spacing:.05em;line-height:2}
+  .keysnote{
+    margin-top:9px;font-size:10px;line-height:1.5;letter-spacing:.03em;
+    color:var(--dim);opacity:.8;max-width:430px;margin-left:auto;margin-right:auto;
+  }
+  kbd{
+    background:rgba(255,255,255,.08);border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:5px;padding:1.5px 6px;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text);margin:0 2px;
+  }
+
   /* ---------- short window (a normal, un-maximised browser) ----------
-     Everything tightens so the whole menu is visible without scrolling. */
+     Everything tightens so the whole menu is visible without scrolling. This
+     block must stay AFTER the base rules it overrides - a media query adds no
+     specificity, so if it came earlier, equal-specificity base rules like
+     .cta/.keys below it would win and the overrides would be dead. */
   @media (max-height:820px){
     h1{font-size:clamp(24px,4.2vw,38px)}
     .sub{margin-bottom:12px}
@@ -165,26 +188,6 @@
     .cta{padding:11px 40px;font-size:12.5px}
     .keys{margin-top:9px;line-height:1.75;font-size:10px}
     .keysnote{margin-top:6px;font-size:9.5px}
-  }
-
-  .cta{
-    display:block;margin:0 auto;padding:13px 46px;border-radius:12px;border:0;cursor:pointer;
-    font-size:13.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#04060c;
-    background:linear-gradient(92deg,#4de1ff,#a78bfa);box-shadow:0 10px 40px -12px #4de1ff;transition:.16s;
-  }
-  .cta:hover{transform:translateY(-2px);box-shadow:0 16px 46px -12px #4de1ff}
-  .cta.ghost{background:transparent;color:var(--text);border:1px solid var(--line);box-shadow:none}
-  .cta.ghost:hover{background:rgba(255,255,255,.07)}
-  .cta.sm{padding:10px 26px;font-size:12px}
-  .row{display:flex;gap:11px;justify-content:center;flex-wrap:wrap}
-  .keys{margin-top:16px;text-align:center;font-size:10.5px;color:var(--dim);letter-spacing:.05em;line-height:2}
-  .keysnote{
-    margin-top:9px;font-size:10px;line-height:1.5;letter-spacing:.03em;
-    color:var(--dim);opacity:.8;max-width:430px;margin-left:auto;margin-right:auto;
-  }
-  kbd{
-    background:rgba(255,255,255,.08);border:1px solid var(--line);border-bottom-width:2px;
-    border-radius:5px;padding:1.5px 6px;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text);margin:0 2px;
   }
 
   /* ---------- admin access ---------- */
