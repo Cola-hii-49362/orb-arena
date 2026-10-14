@@ -73,7 +73,11 @@
     backdrop-filter:blur(4px);padding:20px;overflow:auto;
   }
   .screen.hidden{display:none}
-  .card{width:min(940px,100%);}
+  /* `margin:auto` rather than `align-items:center` on the flex parent: with a
+     centred flex item, a card taller than the viewport overflows past the top
+     of the scroll box and that part can never be scrolled to. Auto margins
+     centre it when there is room and collapse to 0 when there is not. */
+  .card{width:min(940px,100%);margin:auto;}
   h1{
     margin:0 0 3px;font-size:clamp(30px,5.4vw,54px);letter-spacing:.16em;font-weight:800;
     background:linear-gradient(92deg,#4de1ff,#c084fc 45%,#ff5470);-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -94,19 +98,51 @@
   }
   .statpill b{display:block;font-size:15px;color:var(--text);font-family:ui-monospace,Menlo,monospace;letter-spacing:0}
 
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:18px}
+  /* The roster is 11 orbs, so the menu has to earn its space. The cards are
+     compact by design (see .opt below) and the picker only scrolls as a last
+     resort — on a normal, un-maximised window everything fits at once. */
+  .gridwrap{position:relative;margin-bottom:14px}
+  .grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:9px;
+    /* `100vh - 290px` is the real budget: heading + coin/stat bar + buttons +
+       key hints come to ~250px, plus 40px of screen padding. The 900px ceiling
+       only exists so the picker cannot balloon on a huge monitor. */
+    max-height:clamp(150px, calc(100vh - 290px), 900px);
+    overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
+    padding:2px 8px 2px 2px;
+    scrollbar-width:thin;scrollbar-color:rgba(130,170,255,.32) transparent;
+  }
+  .grid::-webkit-scrollbar{width:8px}
+  .grid::-webkit-scrollbar-track{background:transparent}
+  .grid::-webkit-scrollbar-thumb{background:rgba(130,170,255,.25);border-radius:4px}
+  .grid::-webkit-scrollbar-thumb:hover{background:rgba(130,170,255,.45)}
+  /* fade hints — macOS hides overlay scrollbars, so without these there is no
+     sign that the list continues past the edge */
+  .gridwrap::before,.gridwrap::after{
+    content:'';position:absolute;left:0;right:8px;height:26px;pointer-events:none;
+    opacity:0;transition:opacity .18s;z-index:1;
+  }
+  .gridwrap::before{top:0;background:linear-gradient(to bottom,rgba(6,8,15,.92),transparent)}
+  .gridwrap::after{bottom:0;background:linear-gradient(to top,rgba(6,8,15,.92),transparent)}
+  .gridwrap.more-top::before{opacity:1}
+  .gridwrap.more-bot::after{opacity:1}
   .opt{
-    position:relative;text-align:left;cursor:pointer;border-radius:14px;padding:13px;
+    position:relative;text-align:left;cursor:pointer;border-radius:12px;padding:10px;
     background:rgba(255,255,255,.032);border:1px solid var(--line);transition:.16s;
   }
   .opt:hover{background:rgba(255,255,255,.07);transform:translateY(-2px)}
   .opt.sel{border-color:var(--c);background:color-mix(in srgb, var(--c) 13%, transparent);box-shadow:0 0 0 1px var(--c) inset, 0 8px 30px -12px var(--c)}
-  .opt .dot{width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 32% 30%, var(--c2), var(--c));box-shadow:0 0 16px var(--c);margin-bottom:8px}
-  .opt .nm{font-size:13.5px;font-weight:800;letter-spacing:.1em}
-  .opt .tg{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--c);margin:2px 0 6px;font-weight:700}
-  .opt .ds{font-size:11px;line-height:1.5;color:var(--dim)}
-  .opt .st{display:flex;gap:6px;margin-top:8px;font-size:9px;color:var(--dim);letter-spacing:.05em;flex-wrap:wrap}
-  .opt .st i{font-style:normal;background:rgba(255,255,255,.06);padding:2px 6px;border-radius:5px}
+  .opt .dot{width:19px;height:19px;border-radius:50%;background:radial-gradient(circle at 32% 30%, var(--c2), var(--c));box-shadow:0 0 16px var(--c);margin-bottom:6px}
+  .opt .nm{font-size:12.5px;font-weight:800;letter-spacing:.1em}
+  .opt .tg{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--c);margin:1px 0 5px;font-weight:700}
+  /* the blurb is clamped so every card is the same height and the whole roster
+     fits on one screen; the full text is on the card's title attribute */
+  .opt .ds{
+    font-size:10.5px;line-height:1.4;color:var(--dim);
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;
+  }
+  .opt .st{display:flex;gap:5px;margin-top:6px;font-size:8.5px;color:var(--dim);letter-spacing:.05em;flex-wrap:wrap}
+  .opt .st i{font-style:normal;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px}
 
   .cta{
     display:block;margin:0 auto;padding:13px 46px;border-radius:12px;border:0;cursor:pointer;
@@ -126,6 +162,32 @@
   kbd{
     background:rgba(255,255,255,.08);border:1px solid var(--line);border-bottom-width:2px;
     border-radius:5px;padding:1.5px 6px;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text);margin:0 2px;
+  }
+
+  /* ---------- short window (a normal, un-maximised browser) ----------
+     Everything tightens so the whole menu is visible without scrolling. This
+     block must stay AFTER the base rules it overrides - a media query adds no
+     specificity, so if it came earlier, equal-specificity base rules like
+     .cta/.keys below it would win and the overrides would be dead. */
+  @media (max-height:820px){
+    h1{font-size:clamp(24px,4.2vw,38px)}
+    .sub{margin-bottom:12px}
+    .menubar{margin-bottom:12px}
+    .coinpill{padding:5px 12px;font-size:14px}
+    .statpill{padding:5px 11px}
+    .statpill b{font-size:13.5px}
+    .grid{gap:8px}
+    .gridwrap{margin-bottom:12px}
+    .opt{padding:8px}
+    .opt .dot{width:16px;height:16px;margin-bottom:5px}
+    .opt .nm{font-size:11.5px}
+    .opt .tg{font-size:8px;margin:1px 0 4px}
+    .opt .ds{font-size:9.5px;line-height:1.32;-webkit-line-clamp:2}
+    .opt .st{margin-top:5px;font-size:8px;gap:4px}
+    .opt .st i{padding:1px 4px}
+    .cta{padding:11px 40px;font-size:12.5px}
+    .keys{margin-top:9px;line-height:1.75;font-size:10px}
+    .keysnote{margin-top:6px;font-size:9.5px}
   }
 
   /* ---------- admin access ---------- */
@@ -262,7 +324,9 @@
         </svg>
       </button>
     </div>
-    <div class="grid" id="typeGrid"></div>
+    <div class="gridwrap">
+      <div class="grid" id="typeGrid"></div>
+    </div>
     <div class="row">
       <button class="cta" id="btnStart">Enter Arena</button>
       <button class="cta ghost" id="btnLoadout">Loadout</button>
@@ -2716,6 +2780,9 @@ function buildMenu(){
     d.className = 'opt' + (k === selectedType ? ' sel' : '') + (t.admin ? ' admin' : '');
     d.style.setProperty('--c', t.c);
     d.style.setProperty('--c2', t.c2);
+    // the card clamps its blurb to keep the grid short, so keep the full text
+    // reachable on hover
+    d.title = t.name + ' — ' + t.desc;
     d.innerHTML =
       '<div class="dot"></div>' +
       '<div class="nm">' + t.name + '</div>' +
@@ -2734,7 +2801,20 @@ function buildMenu(){
     });
     grid.appendChild(d);
   });
+  updateGridFade();
 }
+
+/* The picker scrolls, so show an edge fade only on the side that has more
+   roster hidden behind it. */
+function updateGridFade(){
+  const g = el('typeGrid');
+  const w = g && g.parentElement;
+  if (!w || !w.classList.contains('gridwrap')) return;
+  w.classList.toggle('more-top', g.scrollTop > 4);
+  w.classList.toggle('more-bot', g.scrollTop + g.clientHeight < g.scrollHeight - 4);
+}
+el('typeGrid').addEventListener('scroll', updateGridFade, { passive:true });
+window.addEventListener('resize', updateGridFade);
 
 el('btnStart').addEventListener('click', ()=>{ SFX.ui(); beginGame(); });
 el('btnNext').addEventListener('click', ()=>{ SFX.ui(); nextRound(); });
