@@ -73,7 +73,11 @@
     backdrop-filter:blur(4px);padding:20px;overflow:auto;
   }
   .screen.hidden{display:none}
-  .card{width:min(940px,100%);}
+  /* `margin:auto` rather than `align-items:center` on the flex parent: with a
+     centred flex item, a card taller than the viewport overflows past the top
+     of the scroll box and that part can never be scrolled to. Auto margins
+     centre it when there is room and collapse to 0 when there is not. */
+  .card{width:min(940px,100%);margin:auto;}
   h1{
     margin:0 0 3px;font-size:clamp(30px,5.4vw,54px);letter-spacing:.16em;font-weight:800;
     background:linear-gradient(92deg,#4de1ff,#c084fc 45%,#ff5470);-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -94,7 +98,35 @@
   }
   .statpill b{display:block;font-size:15px;color:var(--text);font-family:ui-monospace,Menlo,monospace;letter-spacing:0}
 
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:18px}
+  /* The roster grew to 11 orbs, so the picker gets its own scroll area: the
+     coin/stat bar above it and the Enter Arena button below it stay put. */
+  .gridwrap{position:relative;margin-bottom:18px}
+  .grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;
+    /* `100vh - 340px` is the honest budget: the heading, the coin/stat bar, the
+       buttons and the key hints come to ~300px, plus 40px of screen padding.
+       The 760px ceiling just stops the picker ballooning on a huge monitor —
+       it is above the 3-row content height, so a tall window shows the whole
+       roster at once and only a short one scrolls. */
+    max-height:clamp(180px, calc(100vh - 340px), 760px);
+    overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
+    padding:2px 8px 2px 2px;
+    scrollbar-width:thin;scrollbar-color:rgba(130,170,255,.32) transparent;
+  }
+  .grid::-webkit-scrollbar{width:8px}
+  .grid::-webkit-scrollbar-track{background:transparent}
+  .grid::-webkit-scrollbar-thumb{background:rgba(130,170,255,.25);border-radius:4px}
+  .grid::-webkit-scrollbar-thumb:hover{background:rgba(130,170,255,.45)}
+  /* fade hints — macOS hides overlay scrollbars, so without these there is no
+     sign that the list continues past the edge */
+  .gridwrap::before,.gridwrap::after{
+    content:'';position:absolute;left:0;right:8px;height:26px;pointer-events:none;
+    opacity:0;transition:opacity .18s;z-index:1;
+  }
+  .gridwrap::before{top:0;background:linear-gradient(to bottom,rgba(6,8,15,.92),transparent)}
+  .gridwrap::after{bottom:0;background:linear-gradient(to top,rgba(6,8,15,.92),transparent)}
+  .gridwrap.more-top::before{opacity:1}
+  .gridwrap.more-bot::after{opacity:1}
   .opt{
     position:relative;text-align:left;cursor:pointer;border-radius:14px;padding:13px;
     background:rgba(255,255,255,.032);border:1px solid var(--line);transition:.16s;
@@ -262,7 +294,9 @@
         </svg>
       </button>
     </div>
-    <div class="grid" id="typeGrid"></div>
+    <div class="gridwrap">
+      <div class="grid" id="typeGrid"></div>
+    </div>
     <div class="row">
       <button class="cta" id="btnStart">Enter Arena</button>
       <button class="cta ghost" id="btnLoadout">Loadout</button>
@@ -2734,7 +2768,20 @@ function buildMenu(){
     });
     grid.appendChild(d);
   });
+  updateGridFade();
 }
+
+/* The picker scrolls, so show an edge fade only on the side that has more
+   roster hidden behind it. */
+function updateGridFade(){
+  const g = el('typeGrid');
+  const w = g && g.parentElement;
+  if (!w || !w.classList.contains('gridwrap')) return;
+  w.classList.toggle('more-top', g.scrollTop > 4);
+  w.classList.toggle('more-bot', g.scrollTop + g.clientHeight < g.scrollHeight - 4);
+}
+el('typeGrid').addEventListener('scroll', updateGridFade, { passive:true });
+window.addEventListener('resize', updateGridFade);
 
 el('btnStart').addEventListener('click', ()=>{ SFX.ui(); beginGame(); });
 el('btnNext').addEventListener('click', ()=>{ SFX.ui(); nextRound(); });
