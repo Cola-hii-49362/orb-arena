@@ -460,6 +460,8 @@ const AUTO = {
   conductor:  { on:'wall'             },   // every bounce lays a rail section
   mutant:     { on:'near', range:300 },   // copy something the moment a fight starts
   echo:       { on:'far',  range:420 },   // drop a ghost when there is room to run
+  vortex:     { on:'near', range:260 },   // bend their aim the moment they commit
+  bombard:    { on:'near', range:480 },   // shell them from across the box
   cyborg:     { on:'near', range:340 },   // cycle: spin / lightning / crawl
   venator:    { on:'near', range:460 },   // launch the next fighter of the squadron
   omega:      { on:'near', range:430 },   // admin: collapse anything in sight
@@ -537,6 +539,15 @@ const EVO_STAGE_HP    = 1.16;          // max HP multiplier per stage
 const EVO_STAGE_DMG   = 1.14;          // contact multiplier per stage
 const EVO_STAGE_SPEED = 1.05;          // top speed multiplier per stage
 const EVO_STAGE_HEAL  = 0.30;          // of max HP restored on evolving
+
+/* ---- vortex / bombard ---- */
+const WARP_TIME   = 3.0;               // seconds the distortion spins
+const WARP_RADIUS = 200;               // its reach
+const WARP_BEND   = 0.55;              // fraction of hostile velocity bent per second
+const WARP_TICK   = 0.3;               // drag tick, so the pull reads as continuous
+const MORTAR_DMG  = 55;                // per shell, at the centre
+const MORTAR_RADIUS = 95;              // per shell blast
+const MORTAR_SPREAD = 46;              // shells land this far apart
 
 /* ---- conductor ---- */
 const RAIL_LIFE  = 14;                 // seconds a rail section survives
@@ -659,6 +670,22 @@ const TYPES = {
     contact:11, ability:'GHOST ECHO', cd:4.2,
     desc:'Every few seconds the echo leaves a ghost of itself standing exactly where it was. Ghosts are harmless until an enemy touches one — then the whole afterimage detonates in a chain of teal blasts.',
     stats:['MASS 1.8','GHOST x4','KICK 380']
+  },
+  vortex: {
+    key:'vortex', name:'VORTEX', tag:'Distortion',
+    c:'#a78bfa', c2:'#ede9fe',
+    r:25, mass:2.4, hp:215, kick:340, maxSpeed:550,
+    contact:10, ability:'WARP FIELD', cd:5.0,
+    desc:'Opens a spinning distortion around itself for three seconds. Enemies caught in the field are dragged off course — every incoming shot and charge gets bent around you — while anything you slam into hits from a worse angle than it planned.',
+    stats:['MASS 2.4','BEND 55%','KICK 340']
+  },
+  bombard: {
+    key:'bombard', name:'BOMBARD', tag:'Artillery',
+    c:'#fb7185', c2:'#ffe4e6',
+    r:26, mass:2.8, hp:220, kick:330, maxSpeed:540,
+    contact:12, ability:'BARRAGE', cd:4.6,
+    desc:'Calls down a barrage of three mortars on the nearest enemy — each shell whistles in from above and detonates for area damage. The bombard itself is slow and stately; the sky does the work.',
+    stats:['MASS 2.8','3x MORTAR','KICK 330']
   },
 
   /* ---- secret: only reachable through the admin password ---- */
@@ -1270,6 +1297,28 @@ const SFX = {
     playNoise({ dur:0.14, gain:0.05, f0:2600, f1:400, q:1.4, pan:p });
   },
 
+  /* ---------- VORTEX / BOMBARD ---------- */
+  warp(x){                         // the distortion spinning up
+    if (!canPlay('warp', 0.3, 24)) return;
+    const p = panOf(x);
+    playTone({ f0:180, f1:340, dur:0.5, type:'sine', gain:0.05, pan:p, attack:0.06 });
+    playTone({ f0:185, f1:335, dur:0.5, type:'sine', gain:0.05, pan:p, attack:0.06 });  // beat frequency
+    playNoise({ dur:0.55, gain:0.035, f0:600, f1:1800, q:2.2, type:'bandpass', pan:p, shape:'swell' });
+  },
+  barrage(x){                      // incoming — the whistle is the warning
+    if (!canPlay('barrage', 0.4, 20)) return;
+    const p = panOf(x);
+    for (let i=0;i<3;i++){
+      playTone({ f0:1400 - i*180, f1:420, dur:0.5, type:'sine', gain:0.02, pan:p, attack:0.01, delay:i*0.2 });
+    }
+  },
+  mortar(x){                       // a shell landing
+    if (!canPlay('mortar', 0.09, 22)) return;
+    const p = panOf(x);
+    playTone({ f0:110, f1:32, dur:0.3, type:'sine', gain:0.085, pan:p, attack:0.003 });
+    playNoise({ dur:0.18, gain:0.06, f0:1800, f1:240, q:1.0, pan:p });
+  },
+
   /* ---------- deaths ---------- */
   kill(x){                         // an enemy orb pops
     if (!canPlay('kill', 0.04, 18)) return;
@@ -1342,7 +1391,7 @@ const SFX = {
 
 /* ---------------------- game state ---------------------- */
 let state = 'menu';
-let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [], wells = [], arcs = [], rails = [], trains = [], fighters = [], bolts = [], ghosts = [];
+let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [], wells = [], arcs = [], rails = [], trains = [], fighters = [], bolts = [], ghosts = [], shells = [];
 let player = null;
 let selectedType = 'bruiser';
 let round = 1, score = 0, kills = 0, killsThisRound = 0, nextId = 1;
@@ -1399,6 +1448,7 @@ class Ball {
     this.mutated = null;     // mutant: the archetype whose ability was last copied
     this.evoStage = 0;       // evolutions banked this run (0-3)
     this.evoProgress = 0;    // kills banked toward the next evolution
+    this.warp = 0;           // vortex: seconds left on the distortion field
     this.mods = { regen:0, plating:1, vampire:0, shield:0 };
 
     this.angle = rnd(0, TAU);
@@ -1466,19 +1516,32 @@ function spawnChildren(parent){
 }
 
 function startRound(n){
-  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = []; wells = []; arcs = []; rails = []; trains = []; fighters = []; bolts = []; ghosts = [];
+  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = []; wells = []; arcs = []; rails = []; trains = []; fighters = []; bolts = []; ghosts = []; shells = [];
   nextId = 1;
   hitStop = 0; shake = 0; elapsed = 0;
   introTimer = 2.4;
   cdAnnounced = 99;
   kickHeld = false;
   killsThisRound = 0;
+  // round 1 is only ever entered through beginGame — treat it as the run
+  // boundary, so a stale banked evolution can never leak into a new run
+  if (n === 1) runEvo = { stage:0, progress:0, radius:0 };
 
   player = new Ball(selectedType, WORLD.w/2, WORLD.h/2, { side:0, isPlayer:true, cd:1.2, vx:0, vy:0 });
   player.spawnGrace = 1.2;
   player.maxHp *= 1.25;                     // one orb vs a whole box (enemies also take ENEMY_HP)
   if (selectedType === 'venator') player.venShield = VEN_SHIELD;   // the carrier launches screened
   applyModules(player, save.equipped);
+  // evolution is a property of the RUN, not of the round: a freshly spawned
+  // player re-applies everything its stages already banked
+  if (runEvo.stage > 0){
+    player.evoStage = runEvo.stage;
+    player.evoProgress = runEvo.progress;
+    player.maxHp *= Math.pow(EVO_STAGE_HP, runEvo.stage);
+    player.contact *= Math.pow(EVO_STAGE_DMG, runEvo.stage);
+    player.maxSpeed *= Math.pow(EVO_STAGE_SPEED, runEvo.stage);
+    player.r = Math.min(runEvo.radius, 40);
+  }
   player.hp = player.maxHp;
   balls.push(player);
 
@@ -1613,6 +1676,7 @@ function kill(b, source){
     // make it evolve, up to EVO_MAX_STAGE times
     if (source && source.isPlayer && source.alive && source.evoStage < EVO_MAX_STAGE){
       source.evoProgress++;
+      runEvo.progress = source.evoProgress;     // progress survives round changes
       if (source.evoProgress >= EVO_KILLS_PER_STAGE){
         source.evoProgress = 0;
         evolveOrb(source);
@@ -1633,6 +1697,9 @@ function kill(b, source){
 /* the orb grows through three stages as its kill count climbs: bigger, harder
    hitting, faster, and named with roman numerals — BRUISER II, BRUISER III */
 const EVO_ROMAN = ['', 'I', 'II', 'III'];
+/* the growth survives across rounds within one run, so the banked stage lives
+   outside the Ball (which startRound rebuilds every round) */
+let runEvo = { stage:0, progress:0, radius:0 };
 function evoName(b){
   return b.t.name + (b.evoStage > 0 ? ' ' + EVO_ROMAN[b.evoStage] : '');
 }
@@ -1643,6 +1710,9 @@ function evolveOrb(b){
   b.contact *= EVO_STAGE_DMG;
   b.maxSpeed *= EVO_STAGE_SPEED;
   b.r = Math.min(b.r + 2.5, 40);
+  runEvo.stage = b.evoStage;            // remember it for the next round
+  runEvo.progress = b.evoProgress;
+  runEvo.radius = b.r;
   // the body catches up with the new size immediately, no clipping into walls
   b.x = clamp(b.x, b.radius, WORLD.w - b.radius);
   b.y = clamp(b.y, b.radius, WORLD.h - b.radius);
@@ -1677,6 +1747,8 @@ function useAbility(b){
     case 'conductor':  abilityRails(b);     break;
     case 'mutant':     abilityMutate(b);    break;
     case 'echo':       abilityGhost(b);     break;
+    case 'vortex':     abilityWarp(b);      break;
+    case 'bombard':    abilityBarrage(b);   break;
     case 'cyborg':     abilitySaberCycle(b); break;
     case 'venator':    abilityLaunch(b);    break;
     case 'omega':      abilitySingularity(b); break;
@@ -2167,6 +2239,93 @@ function updateGhosts(dt){
   }
 }
 
+/* --- VORTEX: a spinning distortion that bends hostile movement ---
+   While the field is up, every hostile orb inside it has part of its velocity
+   rotated around the vortex each tick — charges and escapes alike arrive
+   pointing somewhere their owner did not plan. */
+function abilityWarp(b){
+  b.warp = WARP_TIME;
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.5, max:WARP_RADIUS, life:.5, t:0, c:b.t.c, w:4 });
+  burst(b.x, b.y, b.t.c, 22, 360, 3);
+  addShake(6); SFX.warp(b.x);
+  floatText(b.x, b.y - b.radius - 22, 'WARP FIELD', b.t.c, 14);
+}
+
+function updateWarp(dt){
+  for (const src of balls){
+    if (!src.alive || !(src.warp > 0)) continue;
+    src.warp -= dt;
+    for (const o of balls){
+      if (!o.alive || o.side === src.side || o.warpImmune) continue;
+      const dx = o.x - src.x, dy = o.y - src.y;
+      const d = Math.hypot(dx, dy);
+      if (d > WARP_RADIUS + o.radius) continue;
+      const strength = WARP_BEND * (1 - d/(WARP_RADIUS + o.radius));
+      // rotate part of the hostile velocity around the vortex centre
+      const a = strength * WARP_TICK * TAU / 3;
+      const cos = Math.cos(a), sin = Math.sin(a);
+      const vx = o.vx*cos - o.vy*sin, vy = o.vx*sin + o.vy*cos;
+      o.vx = vx; o.vy = vy;
+      // and the field drags gently inward, so nobody can simply sit outside
+      const drag = 60 * strength;
+      o.vx -= dx/d * drag * WARP_TICK * 3;
+      o.vy -= dy/d * drag * WARP_TICK * 3;
+      if (Math.random() < 0.06) parts.push({ x:o.x, y:o.y, vx:rnd(-40,40), vy:rnd(-40,40), life:.3, max:.3, c:src.t.c, s:2 });
+    }
+  }
+}
+
+/* --- BOMBARD: three mortars whistle onto the nearest enemy ---
+   Shells spawn above the arena, fall to their mark, and detonate for area
+   damage — the bombard itself never has to get close. */
+function abilityBarrage(b){
+  const e = nearestEnemy(b);
+  let tx, ty;
+  if (e){ tx = e.orb.x; ty = e.orb.y; }
+  else { tx = b.x + Math.cos(b.angle)*300; ty = b.y + Math.sin(b.angle)*300; }
+  tx = clamp(tx, 40, WORLD.w-40);
+  ty = clamp(ty, 40, WORLD.h-40);
+  for (let i = 0; i < 3; i++){
+    shells.push({
+      tx: tx + rnd(-MORTAR_SPREAD, MORTAR_SPREAD),
+      ty: ty + rnd(-MORTAR_SPREAD, MORTAR_SPREAD),
+      x: 0, y: 0, fall: 0.9 + i*0.22, total: 0.9 + i*0.22,
+      side: b.side, owner: b.id, c: b.t.c
+    });
+  }
+  SFX.barrage(b.x);
+  floatText(b.x, b.y - b.radius - 22, 'BARRAGE INBOUND', b.t.c, 13);
+}
+
+function updateShells(dt){
+  for (let i = shells.length-1; i >= 0; i--){
+    const sh = shells[i];
+    sh.fall -= dt;
+    // the shell is drawn high above its mark, dropping in as the timer runs out
+    const f = clamp(sh.fall / sh.total, 0, 1);
+    sh.x = sh.tx + (1-f)*30;   // slight drift so it reads as an incoming arc
+    sh.y = sh.ty - f*260;
+    if (sh.fall > 0) continue;
+    // impact: area damage to every hostile near the mark
+    const owner = balls.find(x => x.id === sh.owner);
+    const mul = owner ? owner.abilityMul : 1;
+    for (const o of balls){
+      if (!o.alive || o.side === sh.side) continue;
+      const d = Math.hypot(o.x-sh.tx, o.y-sh.ty);
+      if (d < MORTAR_RADIUS + o.radius){
+        const g = clamp(1 - d/(MORTAR_RADIUS + o.radius), 0, 1);
+        damage(o, (30 + MORTAR_DMG*g) * mul, owner || null);
+        const a = Math.atan2(o.y-sh.ty, o.x-sh.tx);
+        o.vx += Math.cos(a)*300*g; o.vy += Math.sin(a)*300*g; o.boost = 0.4;
+      }
+    }
+    burst(sh.tx, sh.ty, '#ffd7a1', 20, 380, 3.2);
+    rings.push({ x:sh.tx, y:sh.ty, r:8, max:MORTAR_RADIUS, life:.4, t:0, c:sh.c, w:4 });
+    addShake(7); SFX.mortar(sh.tx);
+    shells.splice(i,1);
+  }
+}
+
 /* --- CYBORG GENERAL: one cooldown, three skills, cycling in order ---
    SPIN -> LIGHTNING -> CRAWL -> SPIN -> ... */
 function abilitySaberCycle(b){
@@ -2554,6 +2713,7 @@ function physics(dt){
     if (b.chill > 0) b.chill = Math.max(0, b.chill - dt);
     if (b.spin > 0)  b.spin  = Math.max(0, b.spin - dt);
     if (b.crawl > 0) b.crawl = Math.max(0, b.crawl - dt);
+    if (b.warp > 0)  b.warp  = Math.max(0, b.warp - dt);
     if (b.shieldFlash > 0) b.shieldFlash = Math.max(0, b.shieldFlash - dt);
     if (b.typeKey === 'venator' && b.venShield < VEN_SHIELD){
       b.venShield = Math.min(VEN_SHIELD, b.venShield + VEN_SHIELD_REGEN*dt);
@@ -2608,6 +2768,8 @@ function physics(dt){
   updateTrains(dt);
   updateFighters(dt);
   updateGhosts(dt);
+  updateWarp(dt);
+  updateShells(dt);
 
   // mines
   for (let i=mines.length-1;i>=0;i--){
@@ -2780,6 +2942,8 @@ function render(){
   drawRails();
   drawTrains();
   drawGhosts();
+  drawWarpFields();
+  drawShells();
 
   ctx.globalCompositeOperation = 'lighter';
   for (const b of balls){
@@ -3266,6 +3430,74 @@ function drawGhosts(){
   }
 }
 
+/* ---------- VORTEX: the spinning distortion ---------- */
+function drawWarpFields(){
+  for (const src of balls){
+    if (!src.alive || !(src.warp > 0)) continue;
+    const fade = Math.min(1, src.warp/0.6);
+    // two counter-rotating spiral arms
+    ctx.save();
+    ctx.translate(src.x, src.y);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let arm = 0; arm < 2; arm++){
+      ctx.globalAlpha = fade * 0.5;
+      ctx.strokeStyle = src.t.c;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      for (let u = 0; u <= 1; u += 0.04){
+        const a = elapsed*(arm ? -2.2 : 2.2) + arm*Math.PI + u*4.2;
+        const rr = 20 + u*(WARP_RADIUS-20);
+        const px = Math.cos(a)*rr, py = Math.sin(a)*rr;
+        if (u === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    // the rim, dashed and turning slowly
+    ctx.globalAlpha = fade * 0.55;
+    ctx.strokeStyle = src.t.c;
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([9, 11]);
+    ctx.lineDashOffset = -elapsed*40;
+    ctx.beginPath(); ctx.arc(0, 0, WARP_RADIUS, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+/* ---------- BOMBARD: incoming shells ---------- */
+function drawShells(){
+  for (const sh of shells){
+    // the target mark: a cross that tightens as the shell comes in
+    const f = clamp(sh.fall / sh.total, 0, 1);
+    const m = 10 + f*8;
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.4*(1-f);
+    ctx.strokeStyle = sh.c;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sh.tx-m, sh.ty); ctx.lineTo(sh.tx+m, sh.ty);
+    ctx.moveTo(sh.tx, sh.ty-m); ctx.lineTo(sh.tx, sh.ty+m);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(sh.tx, sh.ty, MORTAR_RADIUS*(1-f*0.4), 0, TAU); ctx.stroke();
+    ctx.restore();
+    // the shell itself, high and dropping
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#ffd7a1';
+    ctx.shadowColor = sh.c; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(sh.x, sh.y, 4, 0, TAU); ctx.fill();
+    // the whistle trail
+    ctx.strokeStyle = 'rgba(255,215,161,.35)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(sh.x, sh.y);
+    ctx.lineTo(sh.x - 3, sh.y - 26*f);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
 function drawMine(m){
   const armed = m.arm <= 0;
   const blink = armed ? (0.55 + 0.45*Math.sin(m.pulse*9)) : 0.3;
@@ -3705,6 +3937,7 @@ function hideAllScreens(){
 function beginGame(){
   initAudio();
   round = 1; score = 0; kills = 0;
+  runEvo = { stage:0, progress:0, radius:0 };              // fresh run, fresh growth
   save.runs++;
   persist();
   el('pnameTxt').textContent = TYPES[selectedType].name;   // fresh run: no stars yet
