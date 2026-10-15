@@ -530,6 +530,14 @@ const VEN_SHIELD    = 400;             // the carrier's own deflector screen
 const VEN_SHIELD_REGEN = 22;           // shield points back per second while it holds
 const BOLT_CAP      = 100000;          // hard ceiling on starfighter damage, per the brief
 
+/* ---- evolution ---- */
+const EVO_KILLS_PER_STAGE  = 3;        // kills needed to actually evolve
+const EVO_MAX_STAGE = 3;               // the ceiling: three stars after the name
+const EVO_STAGE_HP    = 1.16;          // max HP multiplier per stage
+const EVO_STAGE_DMG   = 1.14;          // contact multiplier per stage
+const EVO_STAGE_SPEED = 1.05;          // top speed multiplier per stage
+const EVO_STAGE_HEAL  = 0.30;          // of max HP restored on evolving
+
 /* ---- conductor ---- */
 const RAIL_LIFE  = 14;                 // seconds a rail section survives
 const RAIL_MAX   = 10;                 // sections one conductor can keep down
@@ -1231,6 +1239,16 @@ const SFX = {
     playNoise({ dur:0.12, gain:0.05, f0:1200, f1:200, q:0.9, pan:p });
   },
 
+  /* ---------- EVOLUTION ---------- */
+  evolve(x){                       // the body outgrowing itself
+    if (!canPlay('evolve', 0.4, 28)) return;
+    const p = panOf(x);
+    playTone({ f0:260, f1:520, dur:0.35, type:'triangle', gain:0.06, pan:p, attack:0.02 });
+    playTone({ f0:390, f1:780, dur:0.4,  type:'triangle', gain:0.05, pan:p, attack:0.03, delay:0.08 });
+    playTone({ f0:520, f1:1040, dur:0.45, type:'triangle', gain:0.045, pan:p, attack:0.04, delay:0.16 });
+    playNoise({ dur:0.4, gain:0.045, f0:900, f1:4200, q:1.6, type:'bandpass', pan:p, shape:'swell' });
+  },
+
   /* ---------- MUTANT ---------- */
   mutate(x){                       // an unstable copy snapping into place
     if (!canPlay('mutate', 0.25, 24)) return;
@@ -1379,6 +1397,8 @@ class Ball {
     this.venShield = 0;      // the carrier's deflector screen (venator only)
     this.shieldFlash = 0;    // the screen flashing as it eats a hit
     this.mutated = null;     // mutant: the archetype whose ability was last copied
+    this.evoStage = 0;       // evolutions banked this run (0-3)
+    this.evoProgress = 0;    // kills banked toward the next evolution
     this.mods = { regen:0, plating:1, vampire:0, shield:0 };
 
     this.angle = rnd(0, TAU);
@@ -1589,12 +1609,53 @@ function kill(b, source){
     score += 100 + round*25;
     kills++; killsThisRound++;
     SFX.kill(b.x); addShake(5);
+    // the player's kills feed its evolution: every EVO_KILLS_PER_STAGE takedowns
+    // make it evolve, up to EVO_MAX_STAGE times
+    if (source && source.isPlayer && source.alive && source.evoStage < EVO_MAX_STAGE){
+      source.evoProgress++;
+      if (source.evoProgress >= EVO_KILLS_PER_STAGE){
+        source.evoProgress = 0;
+        evolveOrb(source);
+      } else {
+        floatText(source.x, source.y - source.radius - 22,
+          'EVO ' + source.evoProgress + '/' + EVO_KILLS_PER_STAGE, '#ffd766', 12);
+      }
+    }
   }
   if (b.isPlayer){
     SFX.playerDeath(); addShake(24); hitStop = 0.12;
     setTimeout(()=> gameOver(), 620);
   }
   updateHud();
+}
+
+/* ---------------------- evolution ---------------------- */
+/* the orb grows through three stages as its kill count climbs: bigger, harder
+   hitting, faster, and named with roman numerals — BRUISER II, BRUISER III */
+const EVO_ROMAN = ['', 'I', 'II', 'III'];
+function evoName(b){
+  return b.t.name + (b.evoStage > 0 ? ' ' + EVO_ROMAN[b.evoStage] : '');
+}
+function evolveOrb(b){
+  b.evoStage++;
+  b.maxHp *= EVO_STAGE_HP;
+  b.hp = Math.min(b.maxHp, b.hp + b.maxHp * EVO_STAGE_HEAL);   // evolving mends
+  b.contact *= EVO_STAGE_DMG;
+  b.maxSpeed *= EVO_STAGE_SPEED;
+  b.r = Math.min(b.r + 2.5, 40);
+  // the body catches up with the new size immediately, no clipping into walls
+  b.x = clamp(b.x, b.radius, WORLD.w - b.radius);
+  b.y = clamp(b.y, b.radius, WORLD.h - b.radius);
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:b.radius*3.2, life:.6, t:0, c:'#ffd766', w:6 });
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:b.radius*2.2, life:.45, t:0, c:'#ffffff', w:2.5 });
+  burst(b.x, b.y, '#ffd766', 34, 520, 3.8);
+  burst(b.x, b.y, b.t.c, 18, 380, 3);
+  addShake(10); SFX.evolve(b.x);
+  floatText(b.x, b.y - b.radius - 26, 'EVOLVED \u2192 ' + evoName(b), '#ffd766', 15);
+  if (b.isPlayer){
+    el('pnameTxt').textContent = evoName(b);
+    updateHud();
+  }
 }
 
 /* ---------------------- abilities ---------------------- */
@@ -3495,6 +3556,29 @@ function drawBall(b){
   }
 
   /* --- status overlays --- */
+  if (b.evoStage > 0){
+    // one gold pip per evolved stage, riding the top of the hull
+    for (let i = 0; i < b.evoStage; i++){
+      const a = -Math.PI/2 + (i - (b.evoStage-1)/2) * 0.42;
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = '#ffd766';
+      ctx.shadowColor = '#ffd766'; ctx.shadowBlur = 7;
+      ctx.beginPath(); ctx.arc(Math.cos(a)*(R+11), Math.sin(a)*(R+11), 3, 0, TAU); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (b.isPlayer && b.evoStage < EVO_MAX_STAGE){
+    // kill progress toward the next evolution: a thin gold arc filling clockwise
+    const prog = b.evoProgress / EVO_KILLS_PER_STAGE;
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = '#ffd766';
+    ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, 0, R + 7, Math.PI*0.75, Math.PI*0.75 + Math.PI*0.5 * Math.min(1, prog));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   if (b.chill > 0){
     // a rime of frost that tightens as the chill deepens
     ctx.globalAlpha = 0.3 + 0.3*Math.min(1, b.chill/2.4);
@@ -3623,6 +3707,7 @@ function beginGame(){
   round = 1; score = 0; kills = 0;
   save.runs++;
   persist();
+  el('pnameTxt').textContent = TYPES[selectedType].name;   // fresh run: no stars yet
   startRound(round);
   hideAllScreens();
   state = 'playing';
