@@ -475,6 +475,7 @@ const AUTO = {
   cyborg:     { on:'near', range:340 },   // cycle: spin / lightning / crawl
   venator:    { on:'near', range:460 },   // launch the next fighter of the squadron
   omega:      { on:'near', range:430 },   // admin: collapse anything in sight
+  highground: { on:'near', range:420 },   // admin: it is over, from up here
 };
 
 /* ---- status-effect tuning ---- */
@@ -749,6 +750,15 @@ const TYPES = {
     admin:true,
     desc:'Admin orb. SINGULARITY collapses the arena around you: it chills every enemy, hauls them in, and hits them for up to 160 on the way. Nothing in the box can outrun you, out-hit you, or out-last you.',
     stats:['MASS 6.5','DMG 48','KICK 560']
+  },
+  highground: {
+    key:'highground', name:'THE HIGHGROUND MASTER', tag:'Admin',
+    c:'#8b5a2b', c2:'#f5e6d0',
+    r:32, mass:5.2, hp:920, kick:530, maxSpeed:870,
+    contact:38, ability:'HIGH GROUND', cd:4.0,
+    admin:true,
+    desc:'Admin orb. It is over: HIGH GROUND summons a stone platform that lifts the master clean off the arena floor — outward, toward you — while every enemy below is battered for standing under him. Do not try it.',
+    stats:['MASS 5.2','DMG 38','KICK 530']
   },
 
   /* ---- meme: only reachable through the memes password ---- */
@@ -1441,6 +1451,15 @@ const SFX = {
     playTone({ f0:1100 + rnd(-150,150), f1:400, dur:0.08, type:'triangle', gain:0.028, pan:p, attack:0.001 });
   },
 
+  /* ---------- THE HIGHGROUND MASTER (admin) ---------- */
+  highground(x){                   // stone grinding stone, then the argument ends
+    if (!canPlay('highground', 0.5, 26)) return;
+    const p = panOf(x);
+    playNoise({ dur:0.5, gain:0.07, f0:400, f1:120, q:0.9, pan:p, shape:'swell' });
+    playTone({ f0:95, f1:40, dur:0.55, type:'sine', gain:0.09, pan:p, attack:0.01 });
+    playTone({ f0:520, f1:780, dur:0.28, type:'triangle', gain:0.035, pan:p, attack:0.02, delay:0.18 });
+  },
+
   /* ---------- deaths ---------- */
   kill(x){                         // an enemy orb pops
     if (!canPlay('kill', 0.04, 18)) return;
@@ -1569,6 +1588,7 @@ class Ball {
     this.shieldFlash = 0;    // the screen flashing as it eats a hit
     this.mutated = null;     // mutant: the archetype whose ability was last copied
     this.warp = 0;           // vortex: seconds left on the distortion field
+    this.highground = 0;     // highground master: seconds left on the platform
     this.evoStage = 0;       // evolutions banked this run (0-3)
     this.evoProgress = 0;    // kills banked toward the next evolution
     this.yeeted = 0;         // seconds left of yeet-toss wall-bonus damage
@@ -1894,6 +1914,7 @@ function useAbility(b){
     case 'cyborg':     abilitySaberCycle(b); break;
     case 'venator':    abilityLaunch(b);    break;
     case 'omega':      abilitySingularity(b); break;
+    case 'highground': abilityHighGround(b); break;
   }
   if (b.isPlayer) updateAbilityUi();
   return true;
@@ -2671,6 +2692,36 @@ function updateMissiles(dt){
   }
 }
 
+/* --- THE HIGHGROUND MASTER (admin): it is over ---
+   Summons a stone platform that lifts him up out of the floor plane, sliding
+   outward toward the viewer. The rising slab batters every enemy beneath it. */
+const HG_LIFT   = 3.0;                 // seconds the platform holds him up
+const HG_RADIUS = 240;                 // the battering reach under the platform
+function abilityHighGround(b){
+  b.highground = HG_LIFT;
+  // the platform slams out of the floor and shoves outward toward the viewer
+  for (const o of balls){
+    if (!o.alive || o.side === b.side) continue;
+    const dx = o.x - b.x, dy = o.y - b.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d < HG_RADIUS + o.radius){
+      const f = clamp(1 - d/(HG_RADIUS + o.radius), 0, 1);
+      damage(o, (60 + 70*f) * b.abilityMul, b);
+      // knocked flat and pushed out from under him
+      o.vx += dx/d * (280 + 320*f);
+      o.vy -= Math.abs(Math.sin(f*3)) * 200 + 140*f;
+      o.boost = Math.max(o.boost, 0.8);
+      o.hitFlash = Math.max(o.hitFlash, 0.25);
+    }
+  }
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:HG_RADIUS, life:.55, t:0, c:'#f5e6d0', w:6 });
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.6, max:HG_RADIUS*0.6, life:.4, t:0, c:'#8b5a2b', w:3 });
+  burst(b.x, b.y, '#c8a878', 36, 560, 3.8);   // stone chips
+  burst(b.x, b.y, '#ffffff', 12, 360, 2.6);
+  addShake(13); SFX.highground(b.x);
+  floatText(b.x, b.y - b.radius - 30, 'IT IS OVER', '#f5e6d0', 17);
+}
+
 /* --- CYBORG GENERAL: one cooldown, three skills, cycling in order ---
    SPIN -> LIGHTNING -> CRAWL -> SPIN -> ... */
 function abilitySaberCycle(b){
@@ -3065,6 +3116,7 @@ function physics(dt){
     if (b.spin > 0)  b.spin  = Math.max(0, b.spin - dt);
     if (b.crawl > 0) b.crawl = Math.max(0, b.crawl - dt);
     if (b.warp > 0)  b.warp  = Math.max(0, b.warp - dt);
+    if (b.highground > 0) b.highground = Math.max(0, b.highground - dt);
     if (b.shieldFlash > 0) b.shieldFlash = Math.max(0, b.shieldFlash - dt);
     if (b.typeKey === 'venator' && b.venShield < VEN_SHIELD){
       b.venShield = Math.min(VEN_SHIELD, b.venShield + VEN_SHIELD_REGEN*dt);
@@ -3095,7 +3147,14 @@ function physics(dt){
       b.nyanAcc = (b.nyanAcc || 0) + dt;
       if (b.nyanAcc >= 0.12){
         b.nyanAcc = 0;
-        b.nyanTrail.push({ x:b.x, y:b.y, life:NYAN_LIFE, hit:new Map() });
+        const sp = Math.hypot(b.vx, b.vy) || 1;
+        // store position, heading and the perpendicular, so the band strands
+        // can be drawn side by side and the tail visibly flows behind
+        b.nyanTrail.push({
+          x:b.x, y:b.y, px:b.x, py:b.y,
+          nx:-b.vy/sp, ny:b.vx/sp,
+          life:NYAN_LIFE, hit:new Map()
+        });
         if (b.nyanTrail.length > 90) b.nyanTrail.shift();
         nyanTick(b);            // trail touches resolve on the same cadence
       }
@@ -3310,6 +3369,7 @@ function render(){
   drawRails();
   drawTrains();
   drawGhosts();
+  drawNyanTrail();
   drawWarpFields();
   drawShells();
   drawMissiles();
@@ -3783,6 +3843,47 @@ function drawSabers(){
 }
 
 /* ---------- ECHO: the afterimages ---------- */
+/* ---------- NYAN: the rainbow, visible and fabulous ---------- */
+function drawNyanTrail(){
+  for (const b of balls){
+    const trail = b.nyanTrail;
+    if (!trail || trail.length < 2) continue;
+    ctx.save();
+    // the band: one fat stroke per rainbow colour, drawn as offset strands
+    for (let c = 0; c < RAINBOW.length; c++){
+      ctx.strokeStyle = RAINBOW[c];
+      ctx.lineWidth = 3.2;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i < trail.length; i++){
+        const seg = trail[i];
+        const off = (c - (RAINBOW.length-1)/2) * 4.2;
+        // perpendicular offset so the strands lie side by side
+        const px = seg.px, py = seg.py;
+        const nx = seg.nx, ny = seg.ny;
+        const x = px + nx*off, y = py + ny*off;
+        if (!started){ ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // sparkle dust along the band
+    ctx.globalAlpha = 0.9;
+    for (let i = 0; i < trail.length; i += 2){
+      const seg = trail[i];
+      if (Math.random() < 0.25){
+        ctx.fillStyle = RAINBOW[(i + Math.floor(elapsed*10)) % RAINBOW.length];
+        ctx.beginPath();
+        ctx.arc(seg.px + rnd(-8,8), seg.py + rnd(-8,8), 1.6, 0, TAU);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+}
+
 function drawGhosts(){
   for (const g of ghosts){
     const fade = Math.min(1, g.life/1.2) * g.born * 0.55;
@@ -4280,6 +4381,119 @@ function drawBall(b){
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  }
+
+  if (t.admin){
+    // the admin orb gets a slow prismatic halo, so it is unmistakable
+    ctx.globalAlpha = 0.45 + 0.25*Math.sin(elapsed*2.6);
+    ctx.lineWidth = 3.2;
+    for (let i=0;i<3;i++){
+      ctx.strokeStyle = 'hsl(' + ((elapsed*70 + i*120) % 360).toFixed(0) + ',100%,66%)';
+      ctx.beginPath();
+      ctx.arc(0, 0, R + 13 + i*7 + Math.sin(elapsed*3 + i)*2.5, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* --- admin cosmetics: each admin orb wears its own body --- */
+  if (b.typeKey === 'omega'){
+    // OMEGA is a black hole: an inky core, an accretion ring, and matter
+    // spiralling in before it disappears for good
+    ctx.save();
+    ctx.rotate(elapsed*0.8);
+    // the accretion disc
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 26; i++){
+      const a = i/26*TAU + elapsed*1.4;
+      const rr = R*(0.55 + 0.42*((i*0.37 + elapsed*0.6) % 1));
+      ctx.globalAlpha = 0.5 * (1 - rr/(R*1.1));
+      ctx.fillStyle = i % 3 === 0 ? '#ffffff' : (i % 3 === 1 ? '#ff2fd0' : '#a24bd7');
+      ctx.beginPath();
+      ctx.arc(Math.cos(a)*rr, Math.sin(a)*rr*0.42, 1.6 + (i%3)*0.7, 0, TAU);  // squashed = disc
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    // the event horizon: pure black, rimmed with a hot thin ring
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath(); ctx.arc(0, 0, R*0.78, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#ff9df1';
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = '#ff2fd0'; ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.arc(0, 0, R*0.78, 0, TAU); ctx.stroke();
+    // the lensing arc above and below (light bending around the horizon)
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(0, 0, R*0.92, -Math.PI*0.85, -Math.PI*0.15); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R*0.92,  Math.PI*0.15,  Math.PI*0.85); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+  if (b.typeKey === 'cyborg'){
+    // a small cape sweeping behind the chassis — it flutters while he moves
+    const sp = Math.hypot(b.vx, b.vy);
+    const flap = Math.sin(elapsed*9) * 0.12 + sp/2600;
+    ctx.save();
+    ctx.rotate(b.angle);
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = '#26262e';
+    ctx.beginPath();
+    ctx.moveTo(-R*0.28, -R*0.78);
+    ctx.quadraticCurveTo(-R*(1.05 + flap), -R*0.30, -R*(0.92 + flap), R*0.30);
+    ctx.quadraticCurveTo(-R*0.55, R*0.42, -R*0.28, R*0.78);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(150,150,170,.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+  if (b.typeKey === 'highground'){
+    // while the platform is up, the master rides a stone slab — lifted toward
+    // the viewer, drawn larger with a casting shadow beneath him
+    if (b.highground > 0){
+      const lift = Math.min(1, (HG_LIFT - b.highground)/0.35) *   // rise fast
+                   Math.min(1, b.highground/0.3);                 // settle down
+      const grow = 1 + lift*0.55;                                 // perspective: closer = bigger
+      // the shadow stays on the floor, shrinking as he rises
+      ctx.save();
+      ctx.globalAlpha = 0.30 * (1 - lift*0.5);
+      ctx.fillStyle = '#000000';
+      ctx.beginPath(); ctx.ellipse(0, R*0.9, R*0.9*(1-lift*0.35), R*0.34*(1-lift*0.35), 0, 0, TAU); ctx.fill();
+      ctx.restore();
+      // the stone slab, tilted toward the viewer
+      ctx.save();
+      ctx.translate(0, -lift*26);
+      ctx.scale(grow, grow);
+      ctx.fillStyle = '#9b8265';
+      ctx.strokeStyle = '#5e4a33';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-R*1.25, R*0.55);
+      ctx.lineTo(-R*1.05, -R*0.35);
+      ctx.lineTo( R*1.05, -R*0.35);
+      ctx.lineTo( R*1.25, R*0.55);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // slab top face
+      ctx.fillStyle = '#b59a78';
+      ctx.beginPath();
+      ctx.moveTo(-R*1.05, -R*0.35);
+      ctx.lineTo( R*1.05, -R*0.35);
+      ctx.lineTo( R*0.85, -R*0.62);
+      ctx.lineTo(-R*0.85, -R*0.62);
+      ctx.closePath();
+      ctx.fill();
+      // cracked stone lines
+      ctx.strokeStyle = 'rgba(60,45,30,.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-R*0.5, R*0.1); ctx.lineTo(-R*0.1, R*0.3); ctx.lineTo(R*0.4, R*0.15);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   const p = clamp(b.hp/b.maxHp, 0, 1);
