@@ -458,6 +458,8 @@ const AUTO = {
   tesla:      { on:'near', range:330 },   // arc across a crowd
   ricochet:   { on:'wall'             },   // every bounce banks a charge
   conductor:  { on:'wall'             },   // every bounce lays a rail section
+  mutant:     { on:'near', range:300 },   // copy something the moment a fight starts
+  echo:       { on:'far',  range:420 },   // drop a ghost when there is room to run
   cyborg:     { on:'near', range:340 },   // cycle: spin / lightning / crawl
   venator:    { on:'near', range:460 },   // launch the next fighter of the squadron
   omega:      { on:'near', range:430 },   // admin: collapse anything in sight
@@ -524,6 +526,8 @@ const JSTAR_SHIELD  = 100;             // so does the Delta-7; the rest rely on 
 const FIGHTER_HIT   = 55;              // contact damage a hostile orb does to a fighter
 const FIGHTER_HITCD = 0.25;            // per-fighter throttle for that contact damage
 const FIGHTER_RANGE = 260;             // how far a fighter will open fire from
+const VEN_SHIELD    = 400;             // the carrier's own deflector screen
+const VEN_SHIELD_REGEN = 22;           // shield points back per second while it holds
 const BOLT_CAP      = 100000;          // hard ceiling on starfighter damage, per the brief
 
 /* ---- conductor ---- */
@@ -631,6 +635,22 @@ const TYPES = {
     contact:12, ability:'RAILS', cd:1.1,
     desc:'Every wall you hit lays a section of track. Connect enough sections and a train runs the whole line on its own, flattening anything standing on it. Bounce around the rim and the arena becomes a railway.',
     stats:['MASS 2.2','TRAIN 30/hit','KICK 350']
+  },
+  mutant: {
+    key:'mutant', name:'MUTANT', tag:'Shapeshifter',
+    c:'#84cc16', c2:'#ecfccb',
+    r:24, mass:2.1, hp:210, kick:360, maxSpeed:570,
+    contact:11, ability:'MUTATE', cd:6.0,
+    desc:'MUTATE copies the ability of a random orb on the field — slam, freeze, well, arc, even the hangar deck — and fires that copy immediately, then shifts to something else next time. No two fights with the mutant play the same.',
+    stats:['MASS 2.1','COPY ANY','KICK 360']
+  },
+  echo: {
+    key:'echo', name:'ECHO', tag:'Afterimage',
+    c:'#2dd4bf', c2:'#ccfbf1',
+    r:22, mass:1.8, hp:200, kick:380, maxSpeed:620,
+    contact:11, ability:'GHOST ECHO', cd:4.2,
+    desc:'Every few seconds the echo leaves a ghost of itself standing exactly where it was. Ghosts are harmless until an enemy touches one — then the whole afterimage detonates in a chain of teal blasts.',
+    stats:['MASS 1.8','GHOST x4','KICK 380']
   },
 
   /* ---- secret: only reachable through the admin password ---- */
@@ -1211,6 +1231,27 @@ const SFX = {
     playNoise({ dur:0.12, gain:0.05, f0:1200, f1:200, q:0.9, pan:p });
   },
 
+  /* ---------- MUTANT ---------- */
+  mutate(x){                       // an unstable copy snapping into place
+    if (!canPlay('mutate', 0.25, 24)) return;
+    const p = panOf(x);
+    playTone({ f0:300 + rnd(-80,80), f1:720 + rnd(-100,100), dur:0.22, type:'sawtooth', gain:0.04, pan:p, attack:0.005 });
+    playNoise({ dur:0.18, gain:0.04, f0:1600, f1:3400, q:1.8, type:'bandpass', pan:p });
+  },
+
+  /* ---------- ECHO ---------- */
+  ghost(x){                        // an afterimage settling into place
+    if (!canPlay('ghost', 0.12, 20)) return;
+    const p = panOf(x);
+    playTone({ f0:880, f1:1320, dur:0.16, type:'sine', gain:0.025, pan:p, attack:0.01 });
+  },
+  ghostPop(x){                     // an afterimage detonating
+    if (!canPlay('ghostPop', 0.08, 22)) return;
+    const p = panOf(x);
+    playTone({ f0:520, f1:90, dur:0.2, type:'triangle', gain:0.06, pan:p });
+    playNoise({ dur:0.14, gain:0.05, f0:2600, f1:400, q:1.4, pan:p });
+  },
+
   /* ---------- deaths ---------- */
   kill(x){                         // an enemy orb pops
     if (!canPlay('kill', 0.04, 18)) return;
@@ -1283,7 +1324,7 @@ const SFX = {
 
 /* ---------------------- game state ---------------------- */
 let state = 'menu';
-let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [], wells = [], arcs = [], rails = [], trains = [], fighters = [], bolts = [];
+let balls = [], mines = [], rings = [], parts = [], texts = [], laserNodes = [], wells = [], arcs = [], rails = [], trains = [], fighters = [], bolts = [], ghosts = [];
 let player = null;
 let selectedType = 'bruiser';
 let round = 1, score = 0, kills = 0, killsThisRound = 0, nextId = 1;
@@ -1335,6 +1376,9 @@ class Ball {
     this.skill = 0;          // cyborg general: which of the three skills fires next
     this.spin = 0;           // seconds left on the extended-blades buff
     this.crawl = 0;          // seconds of i-frames left
+    this.venShield = 0;      // the carrier's deflector screen (venator only)
+    this.shieldFlash = 0;    // the screen flashing as it eats a hit
+    this.mutated = null;     // mutant: the archetype whose ability was last copied
     this.mods = { regen:0, plating:1, vampire:0, shield:0 };
 
     this.angle = rnd(0, TAU);
@@ -1402,7 +1446,7 @@ function spawnChildren(parent){
 }
 
 function startRound(n){
-  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = []; wells = []; arcs = []; rails = []; trains = []; fighters = []; bolts = [];
+  balls = []; mines = []; rings = []; parts = []; texts = []; laserNodes = []; wells = []; arcs = []; rails = []; trains = []; fighters = []; bolts = []; ghosts = [];
   nextId = 1;
   hitStop = 0; shake = 0; elapsed = 0;
   introTimer = 2.4;
@@ -1413,6 +1457,7 @@ function startRound(n){
   player = new Ball(selectedType, WORLD.w/2, WORLD.h/2, { side:0, isPlayer:true, cd:1.2, vx:0, vy:0 });
   player.spawnGrace = 1.2;
   player.maxHp *= 1.25;                     // one orb vs a whole box (enemies also take ENEMY_HP)
+  if (selectedType === 'venator') player.venShield = VEN_SHIELD;   // the carrier launches screened
   applyModules(player, save.equipped);
   player.hp = player.maxHp;
   balls.push(player);
@@ -1474,6 +1519,20 @@ function damage(target, amount, source){
   // a banked momentum charge blunts what comes back at you
   if (target.momentum > 0) amt *= 1 - MOM_RESIST * target.momentum;
 
+  // the venator's deflector screen drinks damage before the hull does
+  if (target.venShield > 0){
+    const eaten = Math.min(target.venShield, amt);
+    target.venShield -= eaten;
+    amt -= eaten;
+    target.shieldFlash = 0.22;
+    if (amt <= 0.5){
+      burst(target.x, target.y, '#8fd3ff', 10, 260, 2.4);
+      floatText(target.x, target.y - target.radius - 8, 'DEFLECTED', '#8fd3ff', 12);
+      SFX.block(target.x);
+      return;                              // the screen took the whole hit
+    }
+  }
+
   // AEGIS shield eats one solid hit
   if (target.mods.shield > 0 && amt >= 14){
     target.mods.shield--;
@@ -1522,6 +1581,10 @@ function kill(b, source){
     rails = rails.filter(r => r.owner !== b.id);
     trains = trains.filter(t => t.owner !== b.id);
   }
+  // a dying echo's afterimages fade out
+  if (b.typeKey === 'echo'){
+    ghosts = ghosts.filter(g => g.owner !== b.id ? true : (g.armed = false, g.life = Math.min(g.life, 0.3), false));
+  }
   if (b.side === 1){
     score += 100 + round*25;
     kills++; killsThisRound++;
@@ -1551,6 +1614,8 @@ function useAbility(b){
     case 'tesla':      abilityArc(b);       break;
     case 'ricochet':   abilityMomentum(b);  break;
     case 'conductor':  abilityRails(b);     break;
+    case 'mutant':     abilityMutate(b);    break;
+    case 'echo':       abilityGhost(b);     break;
     case 'cyborg':     abilitySaberCycle(b); break;
     case 'venator':    abilityLaunch(b);    break;
     case 'omega':      abilitySingularity(b); break;
@@ -1952,6 +2017,95 @@ function updateRails(dt){
 }
 let trainTimer = TRAIN_INTERVAL;   // starts counting down once track exists
 
+/* --- MUTANT: copy a random orb's ability and fire it right away ---
+   The pool is every archetype present on the field (minus itself and the
+   admin orbs), so the copy always makes sense for the fight it is in. */
+function abilityMutate(b){
+  const pool = [...new Set(balls.filter(o => o.alive && o !== b && !o.t.admin).map(o => o.typeKey))]
+    .filter(k => k !== 'mutant');
+  if (!pool.length){
+    // alone in the box: mutate into a bruiser slam by default
+    pool.push('bruiser');
+  }
+  const pick = pool[Math.floor(Math.random()*pool.length)];
+  b.mutated = pick;
+  const savedCd = b.cd;
+  const savedKey = b.typeKey;
+  // fire the copied ability through the normal dispatch, as if for one frame
+  // the mutant genuinely were that archetype
+  b.typeKey = pick;
+  useAbility(b);
+  b.typeKey = savedKey;
+  b.cd = Math.max(savedCd, 2.5);      // copying is strong; keep the cooldown honest
+  rings.push({ x:b.x, y:b.y, r:b.radius, max:b.radius*2.4, life:.45, t:0, c:'#84cc16', w:4 });
+  burst(b.x, b.y, '#84cc16', 18, 340, 3);
+  addShake(5); SFX.mutate(b.x);
+  floatText(b.x, b.y - b.radius - 24, 'MUTATE: ' + (TYPES[pick] ? TYPES[pick].ability : pick), '#84cc16', 12);
+}
+
+/* --- ECHO: leave a ghost of yourself behind ---
+   Ghosts are harmless until an enemy touches one, then the whole line of
+   afterimages goes up in a chain of blasts. */
+function abilityGhost(b){
+  if (ghosts.filter(g => g.owner === b.id && g.alive).length >= 4){
+    // too many afterimages: the oldest destabilises early
+    const mine = ghosts.filter(g => g.owner === b.id);
+    mine[0].life = Math.min(mine[0].life, 0.1);
+  }
+  ghosts.push({
+    owner:b.id, side:b.side, x:b.x, y:b.y, r:b.radius,
+    life:8, t:0, born:0, armed:true, c:b.t.c, seed:Math.random()*100
+  });
+  rings.push({ x:b.x, y:b.y, r:b.radius*0.4, max:b.radius, life:.35, t:0, c:b.t.c, w:2 });
+  SFX.ghost(b.x);
+  floatText(b.x, b.y - b.radius - 18, 'ECHO', b.t.c, 11);
+}
+
+function updateGhosts(dt){
+  for (let i = ghosts.length-1; i >= 0; i--){
+    const g = ghosts[i];
+    g.life -= dt; g.t += dt;
+    g.born = Math.min(1, g.born + dt*3);
+    if (g.life <= 0){ ghosts.splice(i,1); continue; }
+    if (!g.armed) continue;
+    // contact: the whole line of afterimages detonates, chained by proximity
+    let touched = null;
+    for (const o of balls){
+      if (!o.alive || o.side === g.side) continue;
+      if (Math.hypot(o.x-g.x, o.y-g.y) < o.radius + g.r + 4){ touched = o; break; }
+    }
+    if (!touched) continue;
+    g.armed = false;
+    g.life = Math.min(g.life, 0.25);
+    const owner = balls.find(x => x.id === g.owner);
+    const mul = owner ? owner.abilityMul : 1;
+    damage(touched, 46 * mul, owner || null);
+    const a = Math.atan2(touched.y-g.y, touched.x-g.x);
+    touched.vx += Math.cos(a)*260; touched.vy += Math.sin(a)*260; touched.boost = 0.4;
+    burst(g.x, g.y, g.c, 16, 320, 3);
+    rings.push({ x:g.x, y:g.y, r:g.r, max:g.r*2.8, life:.4, t:0, c:g.c, w:3.5 });
+    addShake(6); SFX.ghostPop(g.x);
+    // the chain: every other ghost within reach of this one also pops
+    for (const other of ghosts){
+      if (other === g || !other.armed || other.owner !== g.owner) continue;
+      if (Math.hypot(other.x-g.x, other.y-g.y) < 240){
+        other.armed = false;
+        other.life = Math.min(other.life, 0.22);
+        for (const o of balls){
+          if (!o.alive || o.side === g.side) continue;
+          if (Math.hypot(o.x-other.x, o.y-other.y) < o.radius + other.r + 4){
+            damage(o, 40 * mul, owner || null);
+            const oa = Math.atan2(o.y-other.y, o.x-other.x);
+            o.vx += Math.cos(oa)*200; o.vy += Math.sin(oa)*200; o.boost = 0.35;
+          }
+        }
+        burst(other.x, other.y, other.c, 12, 260, 2.6);
+        rings.push({ x:other.x, y:other.y, r:other.r, max:other.r*2.4, life:.35, t:0, c:other.c, w:3 });
+      }
+    }
+  }
+}
+
 /* --- CYBORG GENERAL: one cooldown, three skills, cycling in order ---
    SPIN -> LIGHTNING -> CRAWL -> SPIN -> ... */
 function abilitySaberCycle(b){
@@ -2036,12 +2190,13 @@ function updateSabers(dt){
 }
 
 /* --- VENATOR: launch the next fighter of the squadron ---
-   The hangar rotates through four Republic classes, picked at random. */
+   The hangar rotates through four Republic classes, picked at random. Each
+   class wears its own livery so you can read the mix at a glance. */
 const FIGHTER_TYPES = [
-  { kind:'LAAT gunship',     dmg:LAAT_DMG, cd:LAAT_CD,  hp:LAAT_HP,  shield:LAAT_SHIELD,  c:'#f87171', size:1.65 },
-  { kind:'ARC-170',          dmg:ARC_DMG,  cd:ARC_CD,   hp:ARC_HP,   shield:0,            c:'#f87171', size:1.15 },
-  { kind:'Jedi Starfighter', dmg:JSTAR_DMG,cd:JSTAR_CD, hp:JSTAR_HP, shield:JSTAR_SHIELD, c:'#a5f3fc', size:1.0  },
-  { kind:'Jedi Interceptor', dmg:JINT_DMG, cd:JINT_CD,  hp:JINT_HP,  shield:0,            c:'#c4b5fd', size:0.9  },
+  { kind:'LAAT gunship',     dmg:LAAT_DMG, cd:LAAT_CD,  hp:LAAT_HP,  shield:LAAT_SHIELD,  c:'#ef4444', size:1.65 },
+  { kind:'ARC-170',          dmg:ARC_DMG,  cd:ARC_CD,   hp:ARC_HP,   shield:0,            c:'#f59e0b', size:1.15 },
+  { kind:'Jedi Starfighter', dmg:JSTAR_DMG,cd:JSTAR_CD, hp:JSTAR_HP, shield:JSTAR_SHIELD, c:'#38bdf8', size:1.0  },
+  { kind:'Jedi Interceptor', dmg:JINT_DMG, cd:JINT_CD,  hp:JINT_HP,  shield:0,            c:'#c084fc', size:0.9  },
 ];
 function abilityLaunch(b){
   const mine = fighters.filter(f => f.owner === b.id && f.alive);
@@ -2338,6 +2493,10 @@ function physics(dt){
     if (b.chill > 0) b.chill = Math.max(0, b.chill - dt);
     if (b.spin > 0)  b.spin  = Math.max(0, b.spin - dt);
     if (b.crawl > 0) b.crawl = Math.max(0, b.crawl - dt);
+    if (b.shieldFlash > 0) b.shieldFlash = Math.max(0, b.shieldFlash - dt);
+    if (b.typeKey === 'venator' && b.venShield < VEN_SHIELD){
+      b.venShield = Math.min(VEN_SHIELD, b.venShield + VEN_SHIELD_REGEN*dt);
+    }
     if (b.momTimer > 0){
       b.momTimer -= dt;
       if (b.momTimer <= 0) b.momentum = 0;    // stop bouncing and the charge lapses
@@ -2387,6 +2546,7 @@ function physics(dt){
   updateRails(dt);
   updateTrains(dt);
   updateFighters(dt);
+  updateGhosts(dt);
 
   // mines
   for (let i=mines.length-1;i>=0;i--){
@@ -2558,6 +2718,7 @@ function render(){
   for (const w of wells) drawWell(w);
   drawRails();
   drawTrains();
+  drawGhosts();
 
   ctx.globalCompositeOperation = 'lighter';
   for (const b of balls){
@@ -3018,6 +3179,32 @@ function drawSabers(){
   }
 }
 
+/* ---------- ECHO: the afterimages ---------- */
+function drawGhosts(){
+  for (const g of ghosts){
+    const fade = Math.min(1, g.life/1.2) * g.born * 0.55;
+    const pulse = 1 + 0.05*Math.sin(g.t*5 + g.seed);
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.globalAlpha = fade;
+    // a translucent hollow shell of the orb that stood here
+    ctx.strokeStyle = g.c;
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash([6, 5]);
+    ctx.lineDashOffset = -g.t*14;
+    ctx.beginPath(); ctx.arc(0, 0, g.r*pulse, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = fade * 0.35;
+    ctx.fillStyle = g.c;
+    ctx.beginPath(); ctx.arc(0, 0, g.r*pulse, 0, TAU); ctx.fill();
+    // the core flickers, so it reads as unstable
+    ctx.globalAlpha = fade * (0.4 + 0.3*Math.abs(Math.sin(g.t*3 + g.seed)));
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(0, 0, g.r*0.28, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawMine(m){
   const armed = m.arm <= 0;
   const blink = armed ? (0.55 + 0.45*Math.sin(m.pulse*9)) : 0.3;
@@ -3255,6 +3442,43 @@ function drawBall(b){
     ctx.beginPath(); ctx.arc(-R*0.80, -R*0.18, R*0.05, 0, TAU); ctx.fill();
     ctx.beginPath(); ctx.arc(-R*0.80,  R*0.18, R*0.05, 0, TAU); ctx.fill();
     ctx.restore();
+
+    // the deflector screen: a hex-tinted bubble that flares while eating a hit
+    if (b.venShield > 0){
+      const sr = R + 16;
+      const flash = b.shieldFlash > 0 ? 0.75 : 0.28 + 0.07*Math.sin(elapsed*5.5);
+      ctx.save();
+      ctx.globalAlpha = flash;
+      ctx.strokeStyle = '#8fd3ff';
+      ctx.lineWidth = 2.4;
+      ctx.shadowColor = '#8fd3ff'; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(0, 0, sr, 0, TAU); ctx.stroke();
+      // hex tint: six faint chords across the bubble read as a deflector grid
+      ctx.globalAlpha = flash * 0.35;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++){
+        const a = elapsed*0.4 + i/6*TAU;
+        const px = Math.cos(a)*sr, py = Math.sin(a)*sr;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.stroke();
+      ctx.globalAlpha = flash * 0.08;
+      ctx.fillStyle = '#8fd3ff';
+      ctx.beginPath(); ctx.arc(0, 0, sr, 0, TAU); ctx.fill();
+      ctx.restore();
+      // shield strength, drawn as a thin blue arc inside the hull ring
+      if (b.isPlayer){
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = '#8fd3ff';
+        ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(0, 0, R + 5, -Math.PI/2, -Math.PI/2 + TAU * (b.venShield/VEN_SHIELD));
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
 
   if (b.isPlayer){
